@@ -12,25 +12,47 @@ const (
 	Status_MOWER_STATUS_OK           uint8 = 255
 )
 
+// Status matches the current mower_msgs/Status.msg definition
 type Status struct {
 	msg.Package          `ros:"mower_msgs"`
 	msg.Definitions      `ros:"uint8 MOWER_STATUS_INITIALIZING=0,uint8 MOWER_STATUS_OK=255"`
 	Stamp                time.Time
 	MowerStatus          uint8
 	RaspberryPiPower     bool
-	GpsPower             bool
+	IsCharging           bool
 	EscPower             bool
 	RainDetected         bool
 	SoundModuleAvailable bool
 	SoundModuleBusy      bool
 	UiBoardAvailable     bool
-	UltrasonicRanges     [5]float32
-	Emergency            bool
-	VCharge              float32
-	VBattery             float32
-	ChargeCurrent        float32
 	MowEnabled           bool
-	LeftEscStatus        ESCStatus
-	RightEscStatus       ESCStatus
-	MowEscStatus         ESCStatus
+	MowerEscStatus       uint8
+	MowerEscTemperature  float32
+	MowerEscCurrent      float32
+	MowerMotorTemperature float32
+	MowerMotorRpm        float32
+}
+
+// CombinedStatus is the aggregated view sent to the frontend via WebSocket.
+// It merges data from /ll/mower_status, /ll/power, and ESC status topics
+// to maintain backward compatibility with the frontend's expected JSON shape.
+type CombinedStatus struct {
+	Stamp                time.Time  `json:"Stamp"`
+	MowerStatus          uint8      `json:"MowerStatus"`
+	RaspberryPiPower     bool       `json:"RaspberryPiPower"`
+	GpsPower             bool       `json:"GpsPower"`
+	EscPower             bool       `json:"EscPower"`
+	RainDetected         bool       `json:"RainDetected"`
+	SoundModuleAvailable bool       `json:"SoundModuleAvailable"`
+	SoundModuleBusy      bool       `json:"SoundModuleBusy"`
+	UiBoardAvailable     bool       `json:"UiBoardAvailable"`
+	UltrasonicRanges     [5]float32 `json:"UltrasonicRanges"`
+	Emergency            bool       `json:"Emergency"`
+	VCharge              float32    `json:"VCharge"`
+	VBattery             float32    `json:"VBattery"`
+	ChargeCurrent        float32    `json:"ChargeCurrent"`
+	MowEnabled           bool       `json:"MowEnabled"`
+	LeftEscStatus        ESCStatus  `json:"LeftEscStatus"`
+	RightEscStatus       ESCStatus  `json:"RightEscStatus"`
+	MowEscStatus         ESCStatus  `json:"MowEscStatus"`
 }
