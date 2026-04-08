@@ -78,6 +78,9 @@ type RosProvider struct {
 	node                      *goroslib.Node
 	mtx                       sync.Mutex
 	statusSubscriber          *goroslib.Subscriber
+	powerSubscriber           *goroslib.Subscriber
+	leftEscSubscriber         *goroslib.Subscriber
+	rightEscSubscriber        *goroslib.Subscriber
 	highLevelStatusSubscriber *goroslib.Subscriber
 	gpsSubscriber             *goroslib.Subscriber
 	imuSubscriber             *goroslib.Subscriber
@@ -88,6 +91,7 @@ type RosProvider struct {
 	poseSubscriber            *goroslib.Subscriber
 	subscribers               map[string]map[string]*RosSubscriber
 	lastMessage               map[string][]byte
+	combinedStatus            mower_msgs.CombinedStatus
 	mowingPaths               []*nav_msgs.Path
 	mowingPath                *nav_msgs.Path
 	mowingPathOrigin          orb.LineString
@@ -169,15 +173,42 @@ func (p *RosProvider) resetSubscribers() {
 	if p.node != nil {
 		p.node.Close()
 	}
-	p.currentPathSubscriber.Close()
-	p.gpsSubscriber.Close()
-	p.highLevelStatusSubscriber.Close()
-	p.imuSubscriber.Close()
-	p.mapSubscriber.Close()
-	p.pathSubscriber.Close()
-	p.statusSubscriber.Close()
-	p.ticksSubscriber.Close()
-	p.poseSubscriber.Close()
+	if p.currentPathSubscriber != nil {
+		p.currentPathSubscriber.Close()
+	}
+	if p.gpsSubscriber != nil {
+		p.gpsSubscriber.Close()
+	}
+	if p.highLevelStatusSubscriber != nil {
+		p.highLevelStatusSubscriber.Close()
+	}
+	if p.imuSubscriber != nil {
+		p.imuSubscriber.Close()
+	}
+	if p.mapSubscriber != nil {
+		p.mapSubscriber.Close()
+	}
+	if p.pathSubscriber != nil {
+		p.pathSubscriber.Close()
+	}
+	if p.statusSubscriber != nil {
+		p.statusSubscriber.Close()
+	}
+	if p.powerSubscriber != nil {
+		p.powerSubscriber.Close()
+	}
+	if p.leftEscSubscriber != nil {
+		p.leftEscSubscriber.Close()
+	}
+	if p.rightEscSubscriber != nil {
+		p.rightEscSubscriber.Close()
+	}
+	if p.ticksSubscriber != nil {
+		p.ticksSubscriber.Close()
+	}
+	if p.poseSubscriber != nil {
+		p.poseSubscriber.Close()
+	}
 	p.node = nil
 	p.currentPathSubscriber = nil
 	p.gpsSubscriber = nil
@@ -186,6 +217,9 @@ func (p *RosProvider) resetSubscribers() {
 	p.mapSubscriber = nil
 	p.pathSubscriber = nil
 	p.statusSubscriber = nil
+	p.powerSubscriber = nil
+	p.leftEscSubscriber = nil
+	p.rightEscSubscriber = nil
 	p.ticksSubscriber = nil
 	p.poseSubscriber = nil
 	p.mowingPaths = []*nav_msgs.Path{}
@@ -221,7 +255,7 @@ func (p *RosProvider) initMowingPathSubscriber() error {
 			case "MOWING":
 				sLastMessage, ok := p.lastMessage["/mower/status"]
 				if ok {
-					var status mower_msgs.Status
+					var status mower_msgs.CombinedStatus
 					err := json.Unmarshal(sLastMessage, &status)
 					if err != nil {
 						logrus.Error(xerrors.Errorf("failed to unmarshal status: %w", err))
@@ -337,6 +371,24 @@ func (p *RosProvider) UnSubscribe(topic string, id string) {
 	}
 }
 
+// publishCombinedStatus serializes the aggregated combinedStatus and publishes
+// it under the virtual "/mower/status" topic so the frontend receives a single
+// JSON object with all fields it expects.
+func (p *RosProvider) publishCombinedStatus() {
+	msgJson, err := json.Marshal(p.combinedStatus)
+	if err != nil {
+		logrus.Error(xerrors.Errorf("failed to marshal combined status: %w", err))
+		return
+	}
+	p.lastMessage["/mower/status"] = msgJson
+	subscribers, hasSubscriber := p.subscribers["/mower/status"]
+	if hasSubscriber {
+		for _, cb := range subscribers {
+			cb.Publish(msgJson)
+		}
+	}
+}
+
 func (p *RosProvider) initSubscribers() error {
 	node, err := p.getNode()
 	if err != nil {
@@ -350,12 +402,74 @@ func (p *RosProvider) initSubscribers() error {
 	}
 	if p.statusSubscriber == nil {
 		p.statusSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
-			Node:      node,
-			Topic:     "/mower/status",
-			Callback:  cbHandler[*mower_msgs.Status](p, "/mower/status"),
+			Node:  node,
+			Topic: "/ll/mower_status",
+			Callback: func(msg *mower_msgs.Status) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				p.combinedStatus.Stamp = msg.Stamp
+				p.combinedStatus.MowerStatus = msg.MowerStatus
+				p.combinedStatus.RaspberryPiPower = msg.RaspberryPiPower
+				p.combinedStatus.EscPower = msg.EscPower
+				p.combinedStatus.RainDetected = msg.RainDetected
+				p.combinedStatus.SoundModuleAvailable = msg.SoundModuleAvailable
+				p.combinedStatus.SoundModuleBusy = msg.SoundModuleBusy
+				p.combinedStatus.UiBoardAvailable = msg.UiBoardAvailable
+				p.combinedStatus.MowEnabled = msg.MowEnabled
+				p.combinedStatus.MowEscStatus.Status = msg.MowerEscStatus
+				p.combinedStatus.MowEscStatus.TemperaturePcb = msg.MowerEscTemperature
+				p.combinedStatus.MowEscStatus.Current = msg.MowerEscCurrent
+				p.combinedStatus.MowEscStatus.TemperatureMotor = msg.MowerMotorTemperature
+				p.combinedStatus.MowEscStatus.Rpm = int16(msg.MowerMotorRpm)
+				p.publishCombinedStatus()
+			},
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /mower/status")
+		logrus.Info("Subscribed to /ll/mower_status")
+	}
+	if p.powerSubscriber == nil {
+		p.powerSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/ll/power",
+			Callback: func(msg *mower_msgs.Power) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				p.combinedStatus.VCharge = msg.VCharge
+				p.combinedStatus.VBattery = msg.VBattery
+				p.combinedStatus.ChargeCurrent = msg.ChargeCurrent
+				p.publishCombinedStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /ll/power")
+	}
+	if p.leftEscSubscriber == nil {
+		p.leftEscSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/ll/diff_drive/left_esc_status",
+			Callback: func(msg *mower_msgs.ESCStatus) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				p.combinedStatus.LeftEscStatus = *msg
+				p.publishCombinedStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /ll/diff_drive/left_esc_status")
+	}
+	if p.rightEscSubscriber == nil {
+		p.rightEscSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/ll/diff_drive/right_esc_status",
+			Callback: func(msg *mower_msgs.ESCStatus) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				p.combinedStatus.RightEscStatus = *msg
+				p.publishCombinedStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /ll/diff_drive/right_esc_status")
 	}
 	if p.highLevelStatusSubscriber == nil {
 		p.highLevelStatusSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
