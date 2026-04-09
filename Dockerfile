@@ -7,7 +7,7 @@ RUN CGO_ENABLED=0 go build -o openmower-gui
 FROM node:18 as build-web
 COPY ./web /web
 WORKDIR /web
-RUN yarn && yarn build
+RUN yarn --network-timeout 600000 && yarn build
 
 FROM ubuntu:22.04 as deps
 RUN apt-get update && apt-get install -y ca-certificates curl python3 python3-pip python3-venv libjim-dev\
