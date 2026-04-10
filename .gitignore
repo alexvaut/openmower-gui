@@ -1,3 +1,4 @@
 /db
+/localdb*/
 /node_modules
 package-lock.json

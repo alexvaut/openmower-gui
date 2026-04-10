@@ -15,7 +15,7 @@ import (
 // gin-swagger middleware
 // swagger embed files
 
-func NewAPI(dbProvider types.IDBProvider, dockerProvider types.IDockerProvider, rosProvider types.IRosProvider, firmwareProvider *providers.FirmwareProvider, ubloxProvider *providers.UbloxProvider) {
+func NewAPI(dbProvider types.IDBProvider, dockerProvider types.IDockerProvider, rosProvider types.IRosProvider, firmwareProvider *providers.FirmwareProvider, ubloxProvider *providers.UbloxProvider, sensorLogProvider *providers.SensorLogProvider) {
 	httpAddr, err := dbProvider.Get("system.api.addr")
 	if err != nil {
 		log.Fatal(err)
@@ -38,6 +38,7 @@ func NewAPI(dbProvider types.IDBProvider, dockerProvider types.IDockerProvider, 
 	SettingsRoutes(apiGroup, dbProvider)
 	ContainersRoutes(apiGroup, dockerProvider)
 	OpenMowerRoutes(apiGroup, rosProvider)
+	SensorLogRoutes(apiGroup, sensorLogProvider)
 	SetupRoutes(apiGroup, firmwareProvider, ubloxProvider)
 	tileServer, err := dbProvider.Get("system.map.enabled")
 	if err != nil {
