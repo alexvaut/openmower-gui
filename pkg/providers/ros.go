@@ -485,11 +485,11 @@ func (p *RosProvider) initSubscribers() error {
 	if p.gpsSubscriber == nil {
 		p.gpsSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:      node,
-			Topic:     "/xbot_driver_gps/xb_pose",
+			Topic:     "/ll/position/gps",
 			Callback:  cbHandler[*xbot_msgs.AbsolutePose](p, "/xbot_driver_gps/xb_pose"),
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /xbot_driver_gps/xb_pose")
+		logrus.Info("Subscribed to /ll/position/gps (aliased as /xbot_driver_gps/xb_pose)")
 	}
 	if p.poseSubscriber == nil {
 		p.poseSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
@@ -503,11 +503,11 @@ func (p *RosProvider) initSubscribers() error {
 	if p.imuSubscriber == nil {
 		p.imuSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:      node,
-			Topic:     "/imu/data_raw",
+			Topic:     "/ll/imu/data_raw",
 			Callback:  cbHandler[*sensor_msgs.Imu](p, "/imu/data_raw"),
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /imu/data_raw")
+		logrus.Info("Subscribed to /ll/imu/data_raw (aliased as /imu/data_raw)")
 	}
 	if p.ticksSubscriber == nil {
 		p.ticksSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
