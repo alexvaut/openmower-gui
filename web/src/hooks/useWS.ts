@@ -28,8 +28,9 @@ export const useWS = <T>(onError: (e: Error) => void, onInfo: (msg: string) => v
     const start = (uri: string) => {
         setFirst(true)
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const devHost = import.meta.env.VITE_WS_HOST as string | undefined;
         if (import.meta.env.DEV) {
-            setUri(`${protocol}://localhost:4006${uri}`)
+            setUri(`${protocol}://${devHost || 'localhost:4006'}${uri}`)
         } else {
             setUri(`${protocol}://${window.location.host}${uri}`)
         }

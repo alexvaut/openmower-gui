@@ -8,6 +8,7 @@ import (
 	"github.com/bluenviron/goroslib/v2/pkg/msgs/nav_msgs"
 	"github.com/bluenviron/goroslib/v2/pkg/msgs/sensor_msgs"
 	"github.com/bluenviron/goroslib/v2/pkg/msgs/visualization_msgs"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/dynamic_reconfigure"
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/std_msgs"
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/xbot_msgs"
@@ -91,6 +92,7 @@ type RosProvider struct {
 	pathSubscriber            *goroslib.Subscriber
 	currentPathSubscriber     *goroslib.Subscriber
 	poseSubscriber            *goroslib.Subscriber
+	mowerLogicParamsSubscriber *goroslib.Subscriber
 	subscribers               map[string]map[string]*RosSubscriber
 	lastMessage               map[string][]byte
 	combinedStatus            mower_msgs.CombinedStatus
@@ -544,6 +546,15 @@ func (p *RosProvider) initSubscribers() error {
 			QueueSize: 1,
 		})
 		logrus.Info("Subscribed to /move_base_flex/FTCPlanner/global_plan")
+	}
+	if p.mowerLogicParamsSubscriber == nil {
+		p.mowerLogicParamsSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:      node,
+			Topic:     "/mower_logic/parameter_updates",
+			Callback:  cbHandler[*dynamic_reconfigure.Config](p, "/mower_logic/parameter_updates"),
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /mower_logic/parameter_updates")
 	}
 	return nil
 }

@@ -151,7 +151,7 @@ func SetDockingPointRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Summary subscribe to a topic
 // @Description subscribe to a topic
 // @Tags openmower
-// @Param topic path string true "topic to subscribe to, could be: diagnostics, status, gps, imu, ticks, highLevelStatus"
+// @Param topic path string true "topic to subscribe to, could be: diagnostics, status, gps, imu, ticks, highLevelStatus, mowerLogicParams"
 // @Router /openmower/subscribe/{topic} [get]
 func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.GET("/subscribe/:topic", func(c *gin.Context) {
@@ -175,6 +175,8 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			def, err = subscribe(provider, c, conn, "/mower/status", -1)
 		case "highLevelStatus":
 			def, err = subscribe(provider, c, conn, "/mower_logic/current_state", -1)
+		case "mowerLogicParams":
+			def, err = subscribe(provider, c, conn, "/mower_logic/parameter_updates", -1)
 		case "gps":
 			def, err = subscribe(provider, c, conn, "/xbot_driver_gps/xb_pose", 100)
 		case "pose":

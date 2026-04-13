@@ -1,10 +1,12 @@
-import {useApi} from "../hooks/useApi.ts";
 import {Card, Col, Divider, Row} from "antd";
 import AsyncButton from "./AsyncButton.tsx";
 import React from "react";
 import styled from "styled-components";
 import AsyncDropDownButton from "./AsyncDropDownButton.tsx";
 import {useHighLevelStatus} from "../hooks/useHighLevelStatus.ts";
+import {useMowerAction} from "../hooks/useMowerAction.ts";
+
+export {useMowerAction};
 
 const ActionsCard = styled(Card)`
   .ant-card-body > button {
@@ -12,20 +14,6 @@ const ActionsCard = styled(Card)`
     margin-bottom: 10px;
   }
 `;
-
-export const useMowerAction = () => {
-    const guiApi = useApi()
-    return (command: string, args: Record<string, any> = {}) => async () => {
-        try {
-            const res = await guiApi.openmower.callCreate(command, args)
-            if (res.error) {
-                throw new Error(res.error.error)
-            }
-        } catch (e: any) {
-            throw new Error(e.message)
-        }
-    };
-};
 
 export const MowerActions: React.FC<React.PropsWithChildren> = (props) => {
     const {highLevelStatus} = useHighLevelStatus();
