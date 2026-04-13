@@ -2,11 +2,11 @@ import {Switch, SwitchProps} from "antd";
 import * as React from "react";
 
 export const AsyncSwitch: React.FC<SwitchProps & {
-    onAsyncChange: (checked: boolean, event: React.MouseEvent<HTMLButtonElement>) => Promise<any>
+    onAsyncChange: (checked: boolean, event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => Promise<any>
 }> = (props) => {
     const {onAsyncChange, ...rest} = props;
     const [loading, setLoading] = React.useState(false)
-    const handleChange = (checked: boolean, event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleChange = (checked: boolean, event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => {
         if (props.onChange !== undefined) {
             props.onChange(checked, event)
         } else if (onAsyncChange !== undefined) {
