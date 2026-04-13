@@ -4,7 +4,7 @@ COPY . /app
 WORKDIR /app
 RUN CGO_ENABLED=0 go build -o openmower-gui
 
-FROM node:18 as build-web
+FROM node:20 as build-web
 COPY ./web /web
 WORKDIR /web
 RUN yarn --network-timeout 600000 && yarn build
