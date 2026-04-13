@@ -1,6 +1,7 @@
 import {Outlet, useMatches, useNavigate} from "react-router-dom";
 import {Layout, Menu, MenuProps} from "antd";
 import {
+    EditOutlined,
     HeatMapOutlined,
     MessageOutlined,
     RobotOutlined,
@@ -30,6 +31,11 @@ let menu: MenuProps['items'] = [
         key: '/map',
         label: 'Map',
         icon: <HeatMapOutlined/>
+    },
+    {
+        key: '/map-editor',
+        label: 'Map Editor',
+        icon: <EditOutlined/>
     },
     {
         key: '/logs',

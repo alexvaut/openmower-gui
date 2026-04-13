@@ -1049,7 +1049,7 @@ export const MapPage = () => {
             (async () => {
                 await mowerAction("mow_enabled", {MowEnabled: 1, MowDirection: 0})()
             })()
-        }, 10000))
+        }, 10000) as unknown as number)
     };
 
     const handleStopManualMode = async () => {

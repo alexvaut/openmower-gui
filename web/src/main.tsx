@@ -8,6 +8,7 @@ import SettingsPage from "./pages/SettingsPage.tsx";
 import LogsPage from "./pages/LogsPage.tsx";
 import OpenMowerPage from "./pages/OpenMowerPage.tsx";
 import MapPage from "./pages/MapPage.tsx";
+import MapEditorPage from "./pages/MapEditorPage.tsx";
 import SetupPage from "./pages/SetupPage.tsx";
 import {App, Row} from "antd";
 import {MowerStatus} from "./components/MowerStatus.tsx";
@@ -33,6 +34,10 @@ const router = createHashRouter([
             {
                 element: <MapPage/>,
                 path: "/map",
+            },
+            {
+                element: <MapEditorPage/>,
+                path: "/map-editor",
             },
             {
                 element: <SetupPage/>,
