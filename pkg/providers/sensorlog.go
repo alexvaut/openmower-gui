@@ -39,6 +39,12 @@ type SensorLogStats struct {
 	NewestTimestamp int64 `json:"newestTimestamp"`
 }
 
+// Pose heartbeat timings — vars (not consts) so tests can shrink them.
+var (
+	poseHeartbeatInterval  = 10 * time.Second
+	poseStalenessThreshold = 30 * time.Second
+)
+
 // sensorColumnWhitelist maps query param names to SQL column names.
 var sensorColumnWhitelist = map[string]string{
 	// Mow motor
@@ -97,6 +103,10 @@ type SensorLogProvider struct {
 
 	// Battery
 	lastVBattery float32
+
+	// Heartbeat: set by onPose, watched by poseHeartbeatLoop to detect a ROS
+	// reset that silently kills the pose RosSubscriber goroutine.
+	lastPoseCallbackAt time.Time
 
 	retentionDays int
 	stopCh        chan struct{}
@@ -210,74 +220,126 @@ func NewSensorLogProvider(rosProvider types.IRosProvider, dbPath string) *Sensor
 
 	go s.sampleLoop()
 	go s.retentionLoop()
+	go s.poseHeartbeatLoop(rosProvider)
 
 	logrus.Infof("sensorlog: initialized (retention=%d days, db=%s)", retentionDays, dbFile)
 	return s
 }
 
 func (s *SensorLogProvider) subscribeToRos(rosProvider types.IRosProvider) {
-	if err := rosProvider.Subscribe("/mower/status", "sensorlog-status", func(msg []byte) {
-		var status combinedStatusSubset
-		if err := json.Unmarshal(msg, &status); err != nil {
-			return
-		}
-		s.mu.Lock()
-		s.lastMowRpm = status.MowEscStatus.Rpm
-		s.lastMowCurrent = status.MowEscStatus.Current
-		s.lastMowTempMot = status.MowEscStatus.TemperatureMotor
-		s.lastMowTempPcb = status.MowEscStatus.TemperaturePcb
-		s.lastLeftRpm = status.LeftEscStatus.Rpm
-		s.lastLeftCurrent = status.LeftEscStatus.Current
-		s.lastLeftTempMot = status.LeftEscStatus.TemperatureMotor
-		s.lastRightRpm = status.RightEscStatus.Rpm
-		s.lastRightCurrent = status.RightEscStatus.Current
-		s.lastRightTempMot = status.RightEscStatus.TemperatureMotor
-		s.lastVBattery = status.VBattery
-		s.hasStatus = true
-		s.mu.Unlock()
-	}); err != nil {
-		logrus.Warnf("sensorlog: failed to subscribe to /mower/status: %v (data collection disabled until ROS connects)", err)
-	}
+	go s.subscribeWithRetry(rosProvider, "/mower/status", "sensorlog-status", s.onMowerStatus)
+	go s.subscribeWithRetry(rosProvider, "/mower_logic/current_state", "sensorlog-hls", s.onHighLevelState)
+	go s.subscribeWithRetry(rosProvider, "/xbot_positioning/xb_pose", "sensorlog-pose", s.onPose)
+}
 
-	if err := rosProvider.Subscribe("/mower_logic/current_state", "sensorlog-hls", func(msg []byte) {
-		var hls highLevelStatusSubset
-		if err := json.Unmarshal(msg, &hls); err != nil {
+// subscribeWithRetry keeps attempting rosProvider.Subscribe until it succeeds
+// (ROS master may not be reachable at container boot). Subscribe is idempotent
+// on (topic, id), so a retry after success is a safe no-op.
+func (s *SensorLogProvider) subscribeWithRetry(
+	rp types.IRosProvider, topic, id string, cb func([]byte),
+) {
+	backoff := time.Second
+	for {
+		if err := rp.Subscribe(topic, id, cb); err == nil {
+			logrus.Infof("sensorlog: subscribed to %s", topic)
 			return
 		}
-		s.mu.Lock()
-		s.lastStateName = hls.StateName
-		s.mu.Unlock()
-	}); err != nil {
-		logrus.Warnf("sensorlog: failed to subscribe to /mower_logic/current_state: %v", err)
+		select {
+		case <-s.stopCh:
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
 	}
+}
 
-	if err := rosProvider.Subscribe("/xbot_positioning/xb_pose", "sensorlog-pose", func(msg []byte) {
-		var pose absolutePoseSubset
-		if err := json.Unmarshal(msg, &pose); err != nil {
-			return
+func (s *SensorLogProvider) onMowerStatus(msg []byte) {
+	var status combinedStatusSubset
+	if err := json.Unmarshal(msg, &status); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastMowRpm = status.MowEscStatus.Rpm
+	s.lastMowCurrent = status.MowEscStatus.Current
+	s.lastMowTempMot = status.MowEscStatus.TemperatureMotor
+	s.lastMowTempPcb = status.MowEscStatus.TemperaturePcb
+	s.lastLeftRpm = status.LeftEscStatus.Rpm
+	s.lastLeftCurrent = status.LeftEscStatus.Current
+	s.lastLeftTempMot = status.LeftEscStatus.TemperatureMotor
+	s.lastRightRpm = status.RightEscStatus.Rpm
+	s.lastRightCurrent = status.RightEscStatus.Current
+	s.lastRightTempMot = status.RightEscStatus.TemperatureMotor
+	s.lastVBattery = status.VBattery
+	s.hasStatus = true
+	s.mu.Unlock()
+}
+
+func (s *SensorLogProvider) onHighLevelState(msg []byte) {
+	var hls highLevelStatusSubset
+	if err := json.Unmarshal(msg, &hls); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastStateName = hls.StateName
+	s.mu.Unlock()
+}
+
+func (s *SensorLogProvider) onPose(msg []byte) {
+	var pose absolutePoseSubset
+	if err := json.Unmarshal(msg, &pose); err != nil {
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	s.lastPoseX = pose.Pose.Pose.Position.X
+	s.lastPoseY = pose.Pose.Pose.Position.Y
+	s.lastGpsAccuracy = pose.PositionAccuracy
+	// Compute speed from consecutive poses using callback timing (~10Hz)
+	if s.hasPrev {
+		dt := now.Sub(s.prevPoseTime).Seconds()
+		if dt > 0.01 && dt < 5 { // ignore <10ms (duplicate) and >5s (gap)
+			dx := pose.Pose.Pose.Position.X - s.prevPoseX
+			dy := pose.Pose.Pose.Position.Y - s.prevPoseY
+			s.lastSpeed = math.Sqrt(dx*dx+dy*dy) / dt
 		}
-		now := time.Now()
-		s.mu.Lock()
-		s.lastPoseX = pose.Pose.Pose.Position.X
-		s.lastPoseY = pose.Pose.Pose.Position.Y
-		s.lastGpsAccuracy = pose.PositionAccuracy
-		// Compute speed from consecutive poses using callback timing (~10Hz)
-		if s.hasPrev {
-			dt := now.Sub(s.prevPoseTime).Seconds()
-			if dt > 0.01 && dt < 5 { // ignore <10ms (duplicate) and >5s (gap)
-				dx := pose.Pose.Pose.Position.X - s.prevPoseX
-				dy := pose.Pose.Pose.Position.Y - s.prevPoseY
-				s.lastSpeed = math.Sqrt(dx*dx+dy*dy) / dt
+	}
+	s.prevPoseX = pose.Pose.Pose.Position.X
+	s.prevPoseY = pose.Pose.Pose.Position.Y
+	s.prevPoseTime = now
+	s.hasPrev = true
+	s.hasPose = true
+	s.lastPoseCallbackAt = now
+	s.mu.Unlock()
+}
+
+// poseHeartbeatLoop detects a silent pose subscription after a ROS reset.
+// RosProvider.resetSubscribers closes the /xbot_positioning/xb_pose RosSubscriber
+// goroutines but leaves their map entries in place, so plain Subscribe retry
+// is a no-op. We force UnSubscribe+Subscribe when callbacks stop flowing.
+func (s *SensorLogProvider) poseHeartbeatLoop(rp types.IRosProvider) {
+	t := time.NewTicker(poseHeartbeatInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-t.C:
+			s.mu.Lock()
+			last := s.lastPoseCallbackAt
+			s.mu.Unlock()
+			if last.IsZero() || time.Since(last) <= poseStalenessThreshold {
+				continue
 			}
+			logrus.Warnf("sensorlog: pose callback silent for %s, re-subscribing", time.Since(last))
+			rp.UnSubscribe("/xbot_positioning/xb_pose", "sensorlog-pose")
+			go s.subscribeWithRetry(rp, "/xbot_positioning/xb_pose", "sensorlog-pose", s.onPose)
+			// Bump the timestamp so we don't flap before the new sub has a chance.
+			s.mu.Lock()
+			s.lastPoseCallbackAt = time.Now()
+			s.mu.Unlock()
 		}
-		s.prevPoseX = pose.Pose.Pose.Position.X
-		s.prevPoseY = pose.Pose.Pose.Position.Y
-		s.prevPoseTime = now
-		s.hasPrev = true
-		s.hasPose = true
-		s.mu.Unlock()
-	}); err != nil {
-		logrus.Warnf("sensorlog: failed to subscribe to /xbot_positioning/xb_pose: %v", err)
 	}
 }
 
