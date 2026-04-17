@@ -1,3 +1,4 @@
+import {memo} from "react";
 import AsyncButton from "../AsyncButton.tsx";
 import {useMowerAction} from "../../hooks/useMowerAction.ts";
 
@@ -12,7 +13,7 @@ const setManualPause = (value: boolean) => ({
     args: {Config: {Bools: [{Name: "manual_pause_mowing", Value: value}]}},
 });
 
-export const ContextActions = ({stateName, emergency, manualPause}: Props) => {
+export const ContextActions = memo(({stateName, emergency, manualPause}: Props) => {
     const mowerAction = useMowerAction();
     const run = (calls: { command: string; args: any }[]) => async () => {
         for (const c of calls) {
@@ -144,4 +145,4 @@ export const ContextActions = ({stateName, emergency, manualPause}: Props) => {
             </Row>
         </div>
     );
-};
+});
