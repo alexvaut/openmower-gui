@@ -644,10 +644,13 @@ func (p *RosProvider) initSubscribers() error {
 		logrus.Info("Subscribed to /mower_logic/parameter_updates")
 	}
 	if p.wifiIfaceSubscriber == nil {
+		rawTopic := "/xbot_monitoring/sensors/om_wifi_iface/data"
+		raw := cbHandler[*xbot_msgs.SensorDataString](p, rawTopic)
 		p.wifiIfaceSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:  node,
-			Topic: "/xbot_monitoring/sensors/om_wifi_iface/data",
+			Topic: rawTopic,
 			Callback: func(msg *xbot_msgs.SensorDataString) {
+				raw(msg)
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
 				v := msg.Data
@@ -656,13 +659,16 @@ func (p *RosProvider) initSubscribers() error {
 			},
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_iface/data")
+		logrus.Info("Subscribed to " + rawTopic)
 	}
 	if p.wifiDbmSubscriber == nil {
+		rawTopic := "/xbot_monitoring/sensors/om_wifi_signal_dbm/data"
+		raw := cbHandler[*xbot_msgs.SensorDataDouble](p, rawTopic)
 		p.wifiDbmSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:  node,
-			Topic: "/xbot_monitoring/sensors/om_wifi_signal_dbm/data",
+			Topic: rawTopic,
 			Callback: func(msg *xbot_msgs.SensorDataDouble) {
+				raw(msg)
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
 				v := msg.Data
@@ -671,13 +677,16 @@ func (p *RosProvider) initSubscribers() error {
 			},
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_signal_dbm/data")
+		logrus.Info("Subscribed to " + rawTopic)
 	}
 	if p.wifiPercentSubscriber == nil {
+		rawTopic := "/xbot_monitoring/sensors/om_wifi_signal_percent/data"
+		raw := cbHandler[*xbot_msgs.SensorDataDouble](p, rawTopic)
 		p.wifiPercentSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:  node,
-			Topic: "/xbot_monitoring/sensors/om_wifi_signal_percent/data",
+			Topic: rawTopic,
 			Callback: func(msg *xbot_msgs.SensorDataDouble) {
+				raw(msg)
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
 				v := msg.Data
@@ -686,7 +695,7 @@ func (p *RosProvider) initSubscribers() error {
 			},
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_signal_percent/data")
+		logrus.Info("Subscribed to " + rawTopic)
 	}
 	return nil
 }
