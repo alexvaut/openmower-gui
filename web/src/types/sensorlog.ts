@@ -61,10 +61,13 @@ export function colorProfileGradient(profile: ColorProfile): string {
 export type TimeRange =
     | 'last_hour' | 'last_12h' | 'last_24h'
     | 'today' | 'yesterday'
-    | 'last_7d' | 'last_30d' | 'all';
+    | 'last_7d' | 'last_30d' | 'all'
+    | 'graph';
 
 interface TimeRangePreset {
     label: string;
+    // For 'graph', callers should read the customRange from useSensorLog instead
+    // of calling resolve().
     resolve: () => { from: number; to: number };
 }
 
@@ -109,6 +112,12 @@ export const TimeRangePresets: Record<TimeRange, TimeRangePreset> = {
     all: {
         label: 'All time',
         resolve: () => ({from: 0, to: Math.floor(Date.now() / 1000)}),
+    },
+    graph: {
+        label: 'Graph view',
+        // Placeholder — actual range lives in useSensorLog.customRange. If the
+        // caller somehow hits this without a customRange, fall back to last hour.
+        resolve: () => ({from: Math.floor(Date.now() / 1000) - 3600, to: Math.floor(Date.now() / 1000)}),
     },
 };
 

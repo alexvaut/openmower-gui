@@ -1,4 +1,4 @@
-import {Button, Select, Tooltip} from 'antd';
+import {Button, Segmented, Select, Tooltip} from 'antd';
 import {useRef} from 'react';
 import {
     DownloadOutlined,
@@ -15,7 +15,17 @@ import type {Snap} from './types';
 import {buildOriginalOutlineMap, validateMap} from './validity';
 import {useMapEditorStore} from './useMapEditorStore';
 
-export function TopBar({canvasSize}: {canvasSize: {width: number; height: number}}) {
+export type ViewMode = 'edit' | 'live';
+
+export function TopBar({
+    canvasSize,
+    mode,
+    onModeChange,
+}: {
+    canvasSize: {width: number; height: number};
+    mode: ViewMode;
+    onModeChange: (m: ViewMode) => void;
+}) {
     const {
         filename, raw, map, dirty, snap,
         loadParsed, markSaved, undo, redo, zoomBy, fit, setSnap, canUndo, canRedo,
@@ -58,62 +68,80 @@ export function TopBar({canvasSize}: {canvasSize: {width: number; height: number
         markSaved();
     };
 
+    const isEdit = mode === 'edit';
     return (
         <div className="h-12 shrink-0 flex items-center px-3 gap-2 bg-slate-900 border-b border-slate-800 text-slate-100">
-            <div className="text-sm font-semibold mr-3">Map Editor</div>
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,application/json"
-                style={{display: 'none'}}
-                onChange={handleFilePick}
-            />
-            <Button size="small" icon={<UploadOutlined/>} onClick={() => fileInputRef.current?.click()}>
-                Load
-            </Button>
-            <Button
+            <div className="text-sm font-semibold mr-2">Map</div>
+            <Segmented
                 size="small"
-                type="primary"
-                icon={<DownloadOutlined/>}
-                disabled={!raw}
-                onClick={handleSave}
-            >
-                Save{dirty ? ' ●' : ''}
-            </Button>
+                value={mode}
+                onChange={v => onModeChange(v as ViewMode)}
+                options={[
+                    {label: 'Edit', value: 'edit'},
+                    {label: 'Live', value: 'live'},
+                ]}
+            />
             <div className="w-px h-6 bg-slate-700 mx-1"/>
-            <Tooltip title="Undo (Ctrl+Z)">
-                <Button size="small" icon={<UndoOutlined/>} disabled={!canUndo} onClick={undo}/>
-            </Tooltip>
-            <Tooltip title="Redo (Ctrl+Shift+Z)">
-                <Button size="small" icon={<RedoOutlined/>} disabled={!canRedo} onClick={redo}/>
-            </Tooltip>
-            <div className="w-px h-6 bg-slate-700 mx-1"/>
-            <Tooltip title="Fit to view (F)">
-                <Button size="small" icon={<ExpandOutlined/>} onClick={() => fit(canvasSize.width, canvasSize.height)}/>
-            </Tooltip>
-            <Tooltip title="Zoom in (+)">
-                <Button size="small" icon={<PlusOutlined/>} onClick={() => zoomBy(1.2)}/>
-            </Tooltip>
-            <Tooltip title="Zoom out (−)">
-                <Button size="small" icon={<MinusOutlined/>} onClick={() => zoomBy(1 / 1.2)}/>
-            </Tooltip>
-            <div className="w-px h-6 bg-slate-700 mx-1"/>
-            <Tooltip title="Snap to grid">
-                <Select
-                    size="small"
-                    value={snap}
-                    onChange={v => setSnap(v as Snap)}
-                    style={{width: 100}}
-                    options={[
-                        {label: 'No snap', value: 0},
-                        {label: 'Snap 0.1 m', value: 0.1},
-                        {label: 'Snap 0.5 m', value: 0.5},
-                        {label: 'Snap 1 m', value: 1},
-                    ]}
-                />
-            </Tooltip>
+            {isEdit && (
+                <>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        style={{display: 'none'}}
+                        onChange={handleFilePick}
+                    />
+                    <Button size="small" icon={<UploadOutlined/>} onClick={() => fileInputRef.current?.click()}>
+                        Load
+                    </Button>
+                    <Button
+                        size="small"
+                        type="primary"
+                        icon={<DownloadOutlined/>}
+                        disabled={!raw}
+                        onClick={handleSave}
+                    >
+                        Save{dirty ? ' ●' : ''}
+                    </Button>
+                    <div className="w-px h-6 bg-slate-700 mx-1"/>
+                    <Tooltip title="Undo (Ctrl+Z)">
+                        <Button size="small" icon={<UndoOutlined/>} disabled={!canUndo} onClick={undo}/>
+                    </Tooltip>
+                    <Tooltip title="Redo (Ctrl+Shift+Z)">
+                        <Button size="small" icon={<RedoOutlined/>} disabled={!canRedo} onClick={redo}/>
+                    </Tooltip>
+                    <div className="w-px h-6 bg-slate-700 mx-1"/>
+                    <Tooltip title="Fit to view (F)">
+                        <Button size="small" icon={<ExpandOutlined/>} onClick={() => fit(canvasSize.width, canvasSize.height)}/>
+                    </Tooltip>
+                    <Tooltip title="Zoom in (+)">
+                        <Button size="small" icon={<PlusOutlined/>} onClick={() => zoomBy(1.2)}/>
+                    </Tooltip>
+                    <Tooltip title="Zoom out (−)">
+                        <Button size="small" icon={<MinusOutlined/>} onClick={() => zoomBy(1 / 1.2)}/>
+                    </Tooltip>
+                    <div className="w-px h-6 bg-slate-700 mx-1"/>
+                    <Tooltip title="Snap to grid">
+                        <Select
+                            size="small"
+                            value={snap}
+                            onChange={v => setSnap(v as Snap)}
+                            style={{width: 100}}
+                            options={[
+                                {label: 'No snap', value: 0},
+                                {label: 'Snap 0.1 m', value: 0.1},
+                                {label: 'Snap 0.5 m', value: 0.5},
+                                {label: 'Snap 1 m', value: 1},
+                            ]}
+                        />
+                    </Tooltip>
+                </>
+            )}
+            {!isEdit && (
+                <span className="text-xs text-slate-500">Satellite + live telemetry (read-only)</span>
+            )}
             <div className="flex-1"/>
-            <div className="text-xs text-slate-400">{filename}{dirty ? ' — modified' : ''}</div>
+            <div className="text-xs text-slate-400">{filename}{isEdit && dirty ? ' — modified' : ''}</div>
         </div>
     );
 }

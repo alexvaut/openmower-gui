@@ -8,7 +8,7 @@ import {featureCollection} from "@turf/helpers"
 import {ChangeEvent, useCallback, useEffect, useMemo, useState} from "react";
 import {AbsolutePose, Map as MapType, MapArea, Marker, MarkerArray, Path, Twist} from "../types/ros.ts";
 import DrawControl from "../components/DrawControl.tsx";
-import Map, {Layer, Source} from 'react-map-gl';
+import Map, {Layer, Source, useMap} from 'react-map-gl';
 import type {Feature} from 'geojson';
 import {FeatureCollection, Polygon, Position} from "geojson";
 import {MowerActions, useMowerAction} from "../components/MowerActions.tsx";
@@ -24,7 +24,7 @@ import {useConfig} from "../hooks/useConfig.tsx";
 import {useEnv} from "../hooks/useEnv.tsx";
 import {Spinner} from "../components/Spinner.tsx";
 import AsyncDropDownButton from "../components/AsyncDropDownButton.tsx";
-import {useSensorLog} from "../hooks/useSensorLog.ts";
+import {useSharedSensorLog} from "../components/map/SensorLogContext";
 import {ColorProfile, colorProfileExpr, colorProfileGradient, ColorProfileLabels, SensorType, SensorTypeLabels, TimeRange, TimeRangePresets} from "../types/sensorlog.ts";
 import {MowingFeature, MowingAreaFeature, MowerFeatureBase, DockFeatureBase, MowingFeatureBase, LineFeatureBase, NavigationFeature, ObstacleFeature, ActivePathFeature, PathFeature } from "../types/map.ts";
 
@@ -48,6 +48,35 @@ class mowingAreaEdit  {
     }
 }
 
+
+// Keeps the sensor overlay layers on top of anything mapbox-gl-draw adds.
+// DrawControl re-adds its polygon layers whenever features change — without
+// this keeper, those re-adds bury the sensor overlay under the area polygons.
+// Order matters: sensor-circles first, then sensor-highlight-ring above it.
+const SensorLayerOrderKeeper = ({visible}: {visible: boolean}) => {
+    const {current: mapRef} = useMap();
+    useEffect(() => {
+        const map = mapRef?.getMap();
+        if (!map || !visible) return;
+        const ensureOnTop = () => {
+            try {
+                const ids = new Set(map.getStyle()?.layers?.map((l: any) => l.id) ?? []);
+                if (ids.has('sensor-circles')) map.moveLayer('sensor-circles');
+                if (ids.has('sensor-highlight-ring')) map.moveLayer('sensor-highlight-ring');
+            } catch {
+                // swallow — style transitions can race with reads
+            }
+        };
+        ensureOnTop();
+        map.on('styledata', ensureOnTop);
+        map.on('sourcedata', ensureOnTop);
+        return () => {
+            map.off('styledata', ensureOnTop);
+            map.off('sourcedata', ensureOnTop);
+        };
+    }, [mapRef, visible]);
+    return null;
+};
 
 export const MapPage = () => {
     const {notification} = App.useApp();
@@ -79,7 +108,7 @@ export const MapPage = () => {
     const [plan, setPlan] = useState<Path | undefined>(undefined)
     const mowingToolWidth = parseFloat(settings["OM_TOOL_WIDTH"] ?? "0.13") * 100;
     const [mowingAreas, setMowingAreas] = useState<{ key: string, label: string, feat: Feature }[]>([])
-    const sensorLog = useSensorLog();
+    const sensorLog = useSharedSensorLog();
 
     const poseStream = useWS<string>(() => {
             console.log({
@@ -742,12 +771,40 @@ export const MapPage = () => {
         };
     }, [sensorLog.data, sensorLog.visible, offsetX, offsetY, datum]);
 
-    // Fetch sensor data when toggled visible or sensor type changes
-    useEffect(() => {
-        if (sensorLog.visible) {
-            sensorLog.fetchData(sensorLog.sensorType, sensorLog.timeRange);
+    // Highlight the sample whose timestamp is closest to the graph's hovered
+    // time. Samples from /api/sensorlog come back ordered by t, so a binary
+    // search gets us the nearest-by-time point. If the nearest point is more
+    // than 60s off (e.g. a gap in the log), skip — a stale highlight would lie.
+    const highlightGeoJSON = useMemo<FeatureCollection>(() => {
+        const empty: FeatureCollection = {type: 'FeatureCollection', features: []};
+        const t = sensorLog.hoveredTime;
+        const samples = sensorLog.data?.samples;
+        if (t == null || !sensorLog.visible || !samples?.length) return empty;
+        let lo = 0, hi = samples.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (samples[mid].t < t) lo = mid + 1;
+            else hi = mid;
         }
-    }, [sensorLog.visible, sensorLog.sensorType, sensorLog.timeRange]);
+        let idx = lo;
+        if (idx > 0 && Math.abs(samples[idx - 1].t - t) < Math.abs(samples[idx].t - t)) {
+            idx = idx - 1;
+        }
+        const s = samples[idx];
+        if (Math.abs(s.t - t) > 60) return empty;
+        const [lon, lat] = transpose(offsetX, offsetY, datum, s.y, s.x);
+        return {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                geometry: {type: 'Point', coordinates: [lon, lat]},
+                properties: {value: s.v},
+            }],
+        };
+    }, [sensorLog.hoveredTime, sensorLog.data, sensorLog.visible, offsetX, offsetY, datum]);
+
+    // Re-fetching is handled inside useSensorLog — it auto-fetches whenever
+    // sensor, time range, custom range, or refreshTick change while visible.
 
     function handleEditMap() {
         setEditMap(!editMap)
@@ -1187,117 +1244,7 @@ export const MapPage = () => {
                 </label>
             </Modal>
 
-            <Col span={24}>
-                <Typography.Title level={2}>Map</Typography.Title>
-                <Typography.Title level={5} style={{color: "#ff0000"}}>
-                    WARNING: Beta, please backup your map before use
-                </Typography.Title>
-            </Col>
-            
-            <Col span={24}>
-                <MowerActions>
-                    {!editMap && <Button size={"small"} key="btnEdit" type="primary" onClick={handleEditMap}
-                    >Edit Map</Button>}
-                    {editMap && <AsyncButton size={"small"} key="btnSave"  type="primary" onAsyncClick={handleSaveMap}
-                    >Save Map</AsyncButton>}
-                    {editMap && <Button size={"small"} key="btnCancel" onClick={handleEditMap}
-                    >Cancel Map Edition</Button>}
-                    {!editMap && 
-                    <AsyncDropDownButton size={"small"}  key="slctAreas"  menu={{
-                        items: mowingAreas,
-                        onAsyncClick: (e) => {
-                            const item = mowingAreas.find(item => item.key == e.key)                            
-                            return mowerAction("start_in_area", {
-                                area: item!!.feat?.properties?.index,
-                            })()
-                        }
-                    }}>Mow area</AsyncDropDownButton>}
-                    {!manualMode &&
-                        <AsyncButton size={"small"}  key="btnManualMode"  onAsyncClick={handleManualMode}
-                        >Manual mowing</AsyncButton>}
-                    {manualMode &&
-                        <AsyncButton size={"small"}  key="btnAutoMode"  onAsyncClick={handleStopManualMode}
-                        >Stop Manual Mowing</AsyncButton>}
-                    <Button size={"small"} key="btnBackup" onClick={handleBackupMap}
-                    >Backup Map</Button>
-                    <Button size={"small"} key="btnRestore" onClick={handleRestoreMap}
-                    >Restore Map</Button>
-                    <Button size={"small"} key="btnDownloadGeo" onClick={handleDownloadGeoJSON}
-                    >Download GeoJSON</Button>
-                    {editMap && <Button size={"small"} key="btnUploadGeo" onClick={handleUploadGeoJSON}>Upload GeoJSON</Button>}
-                </MowerActions>
-                <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap'}}>
-                    <Button size="small" type={sensorLog.visible ? "primary" : "default"}
-                            loading={sensorLog.loading}
-                            onClick={() => sensorLog.setVisible(!sensorLog.visible)}>
-                        Sensor Data
-                    </Button>
-                    {sensorLog.visible && <>
-                        <Select size="small"
-                                style={{minWidth: 130}}
-                                value={sensorLog.sensorType}
-                                options={(Object.keys(SensorTypeLabels) as SensorType[]).map(k => ({
-                                    label: SensorTypeLabels[k], value: k
-                                }))}
-                                onChange={(v: SensorType) => sensorLog.setSensorType(v)}/>
-                        <Select size="small"
-                                style={{minWidth: 110}}
-                                value={sensorLog.timeRange}
-                                options={(Object.keys(TimeRangePresets) as TimeRange[]).map(k => ({
-                                    label: TimeRangePresets[k].label, value: k
-                                }))}
-                                onChange={(v: TimeRange) => sensorLog.setTimeRange(v)}/>
-                        <Select size="small"
-                                style={{minWidth: 90}}
-                                value={sensorLog.colorProfile}
-                                options={(Object.keys(ColorProfileLabels) as ColorProfile[]).map(k => ({
-                                    label: ColorProfileLabels[k], value: k
-                                }))}
-                                onChange={(v: ColorProfile) => sensorLog.setColorProfile(v)}/>
-                        <span style={{fontSize: 11, color: '#999', whiteSpace: 'nowrap'}}>Size</span>
-                        <Slider style={{width: 60, margin: 0}} min={1} max={20} step={1}
-                                value={sensorLog.pointSize} onChange={sensorLog.setPointSize}/>
-                        <span style={{fontSize: 11, color: '#999', whiteSpace: 'nowrap'}}>Blur</span>
-                        <Slider style={{width: 60, margin: 0}} min={0} max={2} step={0.1}
-                                value={sensorLog.pointBlur} onChange={sensorLog.setPointBlur}/>
-                        <span style={{fontSize: 11, color: '#999', whiteSpace: 'nowrap'}}>Opacity</span>
-                        <Slider style={{width: 60, margin: 0}} min={0.1} max={1} step={0.1}
-                                value={sensorLog.opacity} onChange={sensorLog.setOpacity}/>
-                        {sensorLog.data && <span style={{fontSize: 12, color: '#999'}}>
-                            {sensorLog.data.count} pts
-                        </span>}
-                    </>}
-                    {import.meta.env.DEV && <Button size="small" onClick={async () => {
-                        await sensorLog.seedData();
-                        if (sensorLog.visible) sensorLog.fetchData(sensorLog.sensorType, sensorLog.timeRange);
-                    }}>Seed Mock Data</Button>}
-                </div>
-                {sensorLog.visible && sensorLog.data && sensorLog.data.count > 0 && (
-                    <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 4}}>
-                        <span style={{fontSize: 11, color: '#999'}}>{sensorLog.data.min.toFixed(1)}</span>
-                        <div style={{
-                            flex: '0 0 200px', height: 10, borderRadius: 3,
-                            background: colorProfileGradient(sensorLog.colorProfile),
-                        }}/>
-                        <span style={{fontSize: 11, color: '#999'}}>{sensorLog.data.max.toFixed(1)}</span>
-                        <span style={{fontSize: 11, color: '#666', marginLeft: 4}}>
-                            {SensorTypeLabels[sensorLog.sensorType]}
-                        </span>
-                    </div>
-                )}
-            </Col>
-           
-            <Col span={24}>
-                <Row>
-                    <Col span={12}>
-                        <Slider value={offsetX} onChange={handleOffsetX} min={-30} max={30} step={0.01}/>
-                    </Col>
-                    <Col span={12}>
-                        <Slider value={offsetY} onChange={handleOffsetY} min={-30} max={30} step={0.01}/>
-                    </Col>
-                </Row>
-            </Col>
-            <Col span={24} style={{height: '70%'}}>
+            <Col span={24} style={{height: '100%'}}>
                 {map_sw?.length && map_ne?.length ? <Map key={mapKey}
                                                          reuseMaps
                                                          antialias
@@ -1355,6 +1302,21 @@ export const MapPage = () => {
                             />
                         </Source>
                     )}
+                    {sensorLog.visible && highlightGeoJSON.features.length > 0 && (
+                        <Source type="geojson" id="sensor-highlight" data={highlightGeoJSON}>
+                            <Layer
+                                id="sensor-highlight-ring"
+                                type="circle"
+                                paint={{
+                                    'circle-radius': Math.max(sensorLog.pointSize + 6, 12),
+                                    'circle-color': 'rgba(0,0,0,0)',
+                                    'circle-stroke-width': 2,
+                                    'circle-stroke-color': '#ffffff',
+                                }}
+                            />
+                        </Source>
+                    )}
+                    <SensorLayerOrderKeeper visible={sensorLog.visible}/>
                 </Map> : <Spinner/>}
                 {highLevelStatus.highLevelStatus.StateName === "AREA_RECORDING" &&
                     <div style={{position: "absolute", bottom: 30, right: 30, zIndex: 100}}>

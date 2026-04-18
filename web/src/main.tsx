@@ -7,7 +7,6 @@ import Root from "./routes/root.tsx";
 import SettingsPage from "./pages/SettingsPage.tsx";
 import LogsPage from "./pages/LogsPage.tsx";
 import OpenMowerPage from "./pages/OpenMowerPage.tsx";
-import MapPage from "./pages/MapPage.tsx";
 import MapEditorPage from "./pages/MapEditorPage.tsx";
 import SetupPage from "./pages/SetupPage.tsx";
 import {App, Row} from "antd";
@@ -30,10 +29,6 @@ const router = createHashRouter([
             {
                 element: <OpenMowerPage/>,
                 path: "/openmower",
-            },
-            {
-                element: <MapPage/>,
-                path: "/map",
             },
             {
                 element: <MapEditorPage/>,

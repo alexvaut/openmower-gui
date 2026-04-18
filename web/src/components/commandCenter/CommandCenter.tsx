@@ -7,6 +7,7 @@ import {StateBanner} from "./StateBanner.tsx";
 import {WhyLine} from "./WhyLine.tsx";
 import {ReadinessList} from "./ReadinessList.tsx";
 import {ContextActions} from "./ContextActions.tsx";
+import {SettingsColumn} from "./SettingsColumn.tsx";
 import {computeWhyLine} from "./whyLine.ts";
 import {AUTO_MODE_LABELS, MOTOR_TEMP, RAIN_MODE_LABELS, Tone} from "./style.ts";
 
@@ -194,7 +195,7 @@ export const CommandCenter = () => {
                 gpsTone={gpsTone}
             />
             <WhyLine why={why}/>
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-800">
                 <div className="p-5">
                     <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-3">
                         {emergency ? 'Status' : stateName === 'MOWING' ? 'Safety' : 'Readiness'}
@@ -206,6 +207,12 @@ export const CommandCenter = () => {
                         {emergency ? 'Recovery' : 'Actions'}
                     </div>
                     <ContextActions stateName={stateName} emergency={emergency} manualPause={manualPause}/>
+                </div>
+                <div className="p-5">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-3">
+                        Settings
+                    </div>
+                    <SettingsColumn/>
                 </div>
             </div>
         </div>
