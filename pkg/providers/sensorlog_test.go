@@ -149,18 +149,15 @@ func TestSubscribeWithRetry_StopsOnShutdown(t *testing.T) {
 	}
 }
 
-// TestOnPose_UpdatesFieldsAndHeartbeat: pose callback stores position/accuracy
-// and stamps lastPoseCallbackAt so the heartbeat loop sees activity.
-func TestOnPose_UpdatesFieldsAndHeartbeat(t *testing.T) {
+// TestOnPose_UpdatesFields: pose callback stores position/accuracy.
+func TestOnPose_UpdatesFields(t *testing.T) {
 	s := newBareProvider()
 
 	payload := `{
 		"PositionAccuracy": 0.12,
 		"Pose": {"Pose": {"Position": {"X": 1.5, "Y": -2.25}}}
 	}`
-	before := time.Now()
 	s.onPose([]byte(payload))
-	after := time.Now()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -168,9 +165,6 @@ func TestOnPose_UpdatesFieldsAndHeartbeat(t *testing.T) {
 	assert.InDelta(t, 1.5, s.lastPoseX, 1e-9)
 	assert.InDelta(t, -2.25, s.lastPoseY, 1e-9)
 	assert.InDelta(t, 0.12, float64(s.lastGpsAccuracy), 1e-6)
-	assert.False(t, s.lastPoseCallbackAt.IsZero(), "heartbeat timestamp must be set")
-	assert.False(t, s.lastPoseCallbackAt.Before(before))
-	assert.False(t, s.lastPoseCallbackAt.After(after))
 }
 
 // TestOnPose_ComputesSpeed: two pose callbacks 1m apart over ~100ms yield
@@ -238,112 +232,3 @@ func TestOnHighLevelState_PopulatesStateName(t *testing.T) {
 	assert.Equal(t, "MOWING", s.lastStateName)
 }
 
-// withFastHeartbeat shrinks the package-level heartbeat timings for the
-// duration of a test. Must be called BEFORE NewSensorLogProvider so the
-// goroutine picks up the small interval.
-func withFastHeartbeat(t *testing.T, interval, staleness time.Duration) {
-	t.Helper()
-	origInterval, origStaleness := poseHeartbeatInterval, poseStalenessThreshold
-	poseHeartbeatInterval = interval
-	poseStalenessThreshold = staleness
-	t.Cleanup(func() {
-		poseHeartbeatInterval = origInterval
-		poseStalenessThreshold = origStaleness
-	})
-}
-
-// TestPoseHeartbeatLoop_ReSubscribesWhenStale: a stale lastPoseCallbackAt
-// must trigger UnSubscribe + re-Subscribe on the pose topic.
-func TestPoseHeartbeatLoop_ReSubscribesWhenStale(t *testing.T) {
-	withFastHeartbeat(t, 20*time.Millisecond, 50*time.Millisecond)
-
-	fake := newFakeRos()
-	sp := NewSensorLogProvider(fake, t.TempDir())
-	if sp == nil {
-		t.Fatal("NewSensorLogProvider returned nil")
-	}
-	defer sp.Close()
-
-	// Give the initial subscribeToRos goroutines a moment to register.
-	time.Sleep(30 * time.Millisecond)
-	initialSubs := fake.subscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose")
-	assert.GreaterOrEqual(t, initialSubs, 1, "initial pose subscribe should have happened")
-
-	// Simulate a silent pose subscription death: we once had a callback, but
-	// nothing has arrived for a long time.
-	sp.mu.Lock()
-	sp.lastPoseCallbackAt = time.Now().Add(-time.Second)
-	sp.mu.Unlock()
-
-	// Wait for the heartbeat to detect staleness and re-subscribe.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if fake.unsubscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose") >= 1 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	assert.GreaterOrEqual(t,
-		fake.unsubscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose"), 1,
-		"heartbeat should have unsubscribed the stale pose topic")
-	assert.Greater(t,
-		fake.subscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose"), initialSubs,
-		"heartbeat should have re-subscribed after unsubscribing")
-}
-
-// TestPoseHeartbeatLoop_DoesNotFireWhenIdle: if no pose callback has ever
-// arrived (lastPoseCallbackAt is zero), the heartbeat must NOT unsubscribe.
-func TestPoseHeartbeatLoop_DoesNotFireWhenIdle(t *testing.T) {
-	withFastHeartbeat(t, 20*time.Millisecond, 50*time.Millisecond)
-
-	fake := newFakeRos()
-	sp := NewSensorLogProvider(fake, t.TempDir())
-	if sp == nil {
-		t.Fatal("NewSensorLogProvider returned nil")
-	}
-	defer sp.Close()
-
-	// Let the heartbeat tick several times.
-	time.Sleep(200 * time.Millisecond)
-
-	assert.Equal(t, 0,
-		fake.unsubscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose"),
-		"heartbeat must not fire while lastPoseCallbackAt is zero")
-}
-
-// TestPoseHeartbeatLoop_DoesNotFireWhenFresh: continuously-refreshed pose
-// callbacks keep the heartbeat quiet.
-func TestPoseHeartbeatLoop_DoesNotFireWhenFresh(t *testing.T) {
-	withFastHeartbeat(t, 20*time.Millisecond, 50*time.Millisecond)
-
-	fake := newFakeRos()
-	sp := NewSensorLogProvider(fake, t.TempDir())
-	if sp == nil {
-		t.Fatal("NewSensorLogProvider returned nil")
-	}
-	defer sp.Close()
-
-	stop := make(chan struct{})
-	go func() {
-		tick := time.NewTicker(10 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-tick.C:
-				sp.mu.Lock()
-				sp.lastPoseCallbackAt = time.Now()
-				sp.mu.Unlock()
-			}
-		}
-	}()
-	defer close(stop)
-
-	time.Sleep(200 * time.Millisecond)
-
-	assert.Equal(t, 0,
-		fake.unsubscribeCount("/xbot_positioning/xb_pose", "sensorlog-pose"),
-		"heartbeat must not fire while pose callbacks are fresh")
-}

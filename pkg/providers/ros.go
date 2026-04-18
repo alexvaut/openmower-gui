@@ -95,6 +95,8 @@ type RosProvider struct {
 	mowerLogicParamsSubscriber *goroslib.Subscriber
 	subscribers               map[string]map[string]*RosSubscriber
 	lastMessage               map[string][]byte
+	lastMessageAt             map[string]time.Time
+	nodeCreatedAt             time.Time
 	combinedStatus            mower_msgs.CombinedStatus
 	mowingPaths               []*nav_msgs.Path
 	mowingPath                *nav_msgs.Path
@@ -129,6 +131,9 @@ func (p *RosProvider) getNode() (*goroslib.Node, error) {
 		ReadTimeout:   time.Minute,
 		WriteTimeout:  time.Minute,
 	})
+	if err == nil && p.node != nil {
+		p.nodeCreatedAt = time.Now()
+	}
 	return p.node, err
 
 }
@@ -147,30 +152,81 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 		logrus.Error(err)
 		return r
 	}
-	go func() {
-		for range time.Tick(20 * time.Second) {
-			node, err := r.getNode()
-			if err != nil {
-				logrus.Error(xerrors.Errorf("failed to get node: %w", err))
-				continue
-			}
-			_, err = node.NodePing("rosout")
-			if err != nil {
-				logrus.Error(xerrors.Errorf("failed to ping node: %w, restarting node", err))
-				r.resetSubscribers()
-			} else {
-				err = r.initSubscribers()
-				if err != nil {
-					logrus.Error(xerrors.Errorf("failed to init subscribers: %w", err))
-				}
-				err = r.initMowingPathSubscriber()
-				if err != nil {
-					logrus.Error(xerrors.Errorf("failed to init mowing path subscriber: %w", err))
-				}
-			}
-		}
-	}()
+	go r.watchdogLoop()
 	return r
+}
+
+// Watchdog timings — vars (not consts) so tests can shrink them if needed.
+var (
+	watchdogTick   = 20 * time.Second
+	staleThreshold = 45 * time.Second
+	bootGrace      = 45 * time.Second
+)
+
+// Always-on topics used as the freshness signal. Both are published whenever
+// the low-level ROS stack is up (mower status at ~10Hz, power at ~2Hz).
+const (
+	freshnessTopicStatus = "/ll/mower_status"
+	freshnessTopicPower  = "/ll/power"
+)
+
+// shouldResetForStaleness decides whether the watchdog should tear down the
+// ROS node based on message-flow staleness alone. `nodeCreatedAt.IsZero()`
+// means no node has been created yet (boot not complete); we never reset in
+// that case. A zero `statusAt`/`powerAt` is treated as "infinitely stale",
+// which together with the `bootGrace` gate gives the node time to start
+// receiving before we trip.
+func shouldResetForStaleness(now, nodeCreatedAt, statusAt, powerAt time.Time) bool {
+	if nodeCreatedAt.IsZero() {
+		return false
+	}
+	if now.Sub(nodeCreatedAt) <= bootGrace {
+		return false
+	}
+	statusStale := statusAt.IsZero() || now.Sub(statusAt) > staleThreshold
+	powerStale := powerAt.IsZero() || now.Sub(powerAt) > staleThreshold
+	return statusStale && powerStale
+}
+
+func (r *RosProvider) watchdogLoop() {
+	for range time.Tick(watchdogTick) {
+		node, err := r.getNode()
+		if err != nil {
+			logrus.Error(xerrors.Errorf("failed to get node: %w", err))
+			continue
+		}
+		_, pingErr := node.NodePing("rosout")
+
+		r.mtx.Lock()
+		nodeCreatedAt := r.nodeCreatedAt
+		statusAt := r.lastMessageAt[freshnessTopicStatus]
+		powerAt := r.lastMessageAt[freshnessTopicPower]
+		r.mtx.Unlock()
+
+		stale := shouldResetForStaleness(time.Now(), nodeCreatedAt, statusAt, powerAt)
+
+		if pingErr != nil || stale {
+			reason := ""
+			switch {
+			case pingErr != nil && stale:
+				reason = "rosout ping failed and status/power silent"
+			case pingErr != nil:
+				reason = "rosout ping failed"
+			default:
+				reason = "status+power silent past threshold (ping ok, stale publisher URLs)"
+			}
+			logrus.Warnf("ros watchdog: resetting subscribers: %s", reason)
+			r.resetSubscribers()
+			continue
+		}
+
+		if err := r.initSubscribers(); err != nil {
+			logrus.Error(xerrors.Errorf("failed to init subscribers: %w", err))
+		}
+		if err := r.initMowingPathSubscriber(); err != nil {
+			logrus.Error(xerrors.Errorf("failed to init mowing path subscriber: %w", err))
+		}
+	}
 }
 
 func (p *RosProvider) resetSubscribers() {
@@ -213,7 +269,11 @@ func (p *RosProvider) resetSubscribers() {
 	if p.poseSubscriber != nil {
 		p.poseSubscriber.Close()
 	}
+	if p.mowerLogicParamsSubscriber != nil {
+		p.mowerLogicParamsSubscriber.Close()
+	}
 	p.node = nil
+	p.nodeCreatedAt = time.Time{}
 	p.currentPathSubscriber = nil
 	p.gpsSubscriber = nil
 	p.highLevelStatusSubscriber = nil
@@ -226,15 +286,18 @@ func (p *RosProvider) resetSubscribers() {
 	p.rightEscSubscriber = nil
 	p.ticksSubscriber = nil
 	p.poseSubscriber = nil
+	p.mowerLogicParamsSubscriber = nil
 	p.mowingPaths = []*nav_msgs.Path{}
 	p.mowingPath = nil
 	p.mowingPathOrigin = nil
-	xbPose := p.subscribers["/xbot_positioning/xb_pose"]
-	if xbPose != nil {
-		for _, sub := range xbPose {
-			sub.Close()
-		}
-	}
+	// Drop cached last-message bytes and timestamps so the staleness check
+	// starts fresh and new subscribers don't get replayed stale data from
+	// before the reset. The external RosSubscriber wrappers in `p.subscribers`
+	// are pure in-process buffers with no network state, so we leave them
+	// alone — they'll resume delivery once the new goroslib.Subscribers come
+	// back up and start pumping messages through cbHandler.
+	p.lastMessage = map[string][]byte{}
+	p.lastMessageAt = map[string]time.Time{}
 }
 
 func (p *RosProvider) initMowingPathSubscriber() error {
@@ -404,6 +467,9 @@ func (p *RosProvider) initSubscribers() error {
 	if p.lastMessage == nil {
 		p.lastMessage = make(map[string][]byte)
 	}
+	if p.lastMessageAt == nil {
+		p.lastMessageAt = make(map[string]time.Time)
+	}
 	if p.statusSubscriber == nil {
 		p.statusSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:  node,
@@ -411,6 +477,7 @@ func (p *RosProvider) initSubscribers() error {
 			Callback: func(msg *mower_msgs.Status) {
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
+				p.lastMessageAt["/ll/mower_status"] = time.Now()
 				p.combinedStatus.Stamp = msg.Stamp
 				p.combinedStatus.MowerStatus = msg.MowerStatus
 				p.combinedStatus.RaspberryPiPower = msg.RaspberryPiPower
@@ -438,6 +505,7 @@ func (p *RosProvider) initSubscribers() error {
 			Callback: func(msg *mower_msgs.Power) {
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
+				p.lastMessageAt["/ll/power"] = time.Now()
 				p.combinedStatus.VCharge = msg.VCharge
 				p.combinedStatus.VBattery = msg.VBattery
 				p.combinedStatus.ChargeCurrent = msg.ChargeCurrent
@@ -454,6 +522,7 @@ func (p *RosProvider) initSubscribers() error {
 			Callback: func(msg *mower_msgs.ESCStatus) {
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
+				p.lastMessageAt["/ll/diff_drive/left_esc_status"] = time.Now()
 				p.combinedStatus.LeftEscStatus = *msg
 				p.publishCombinedStatus()
 			},
@@ -468,6 +537,7 @@ func (p *RosProvider) initSubscribers() error {
 			Callback: func(msg *mower_msgs.ESCStatus) {
 				p.mtx.Lock()
 				defer p.mtx.Unlock()
+				p.lastMessageAt["/ll/diff_drive/right_esc_status"] = time.Now()
 				p.combinedStatus.RightEscStatus = *msg
 				p.publishCombinedStatus()
 			},
@@ -569,6 +639,7 @@ func cbHandler[T any](p *RosProvider, topic string) func(msg T) {
 			return
 		}
 		p.lastMessage[topic] = msgJson
+		p.lastMessageAt[topic] = time.Now()
 		subscribers, hasSubscriber := p.subscribers[topic]
 		if hasSubscriber {
 			for _, cb := range subscribers {
@@ -751,6 +822,7 @@ func (p *RosProvider) jsonMapHandler(msg *std_msgs.String) {
 		return
 	}
 	p.lastMessage[topic] = msgJson
+	p.lastMessageAt["/mower_map_service/json_map"] = time.Now()
 	subscribers, hasSubscriber := p.subscribers[topic]
 	if hasSubscriber {
 		for _, cb := range subscribers {

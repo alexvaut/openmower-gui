@@ -39,12 +39,6 @@ type SensorLogStats struct {
 	NewestTimestamp int64 `json:"newestTimestamp"`
 }
 
-// Pose heartbeat timings — vars (not consts) so tests can shrink them.
-var (
-	poseHeartbeatInterval  = 10 * time.Second
-	poseStalenessThreshold = 30 * time.Second
-)
-
 // sensorColumnWhitelist maps query param names to SQL column names.
 var sensorColumnWhitelist = map[string]string{
 	// Mow motor
@@ -103,10 +97,6 @@ type SensorLogProvider struct {
 
 	// Battery
 	lastVBattery float32
-
-	// Heartbeat: set by onPose, watched by poseHeartbeatLoop to detect a ROS
-	// reset that silently kills the pose RosSubscriber goroutine.
-	lastPoseCallbackAt time.Time
 
 	retentionDays int
 	stopCh        chan struct{}
@@ -220,7 +210,6 @@ func NewSensorLogProvider(rosProvider types.IRosProvider, dbPath string) *Sensor
 
 	go s.sampleLoop()
 	go s.retentionLoop()
-	go s.poseHeartbeatLoop(rosProvider)
 
 	logrus.Infof("sensorlog: initialized (retention=%d days, db=%s)", retentionDays, dbFile)
 	return s
@@ -310,37 +299,7 @@ func (s *SensorLogProvider) onPose(msg []byte) {
 	s.prevPoseTime = now
 	s.hasPrev = true
 	s.hasPose = true
-	s.lastPoseCallbackAt = now
 	s.mu.Unlock()
-}
-
-// poseHeartbeatLoop detects a silent pose subscription after a ROS reset.
-// RosProvider.resetSubscribers closes the /xbot_positioning/xb_pose RosSubscriber
-// goroutines but leaves their map entries in place, so plain Subscribe retry
-// is a no-op. We force UnSubscribe+Subscribe when callbacks stop flowing.
-func (s *SensorLogProvider) poseHeartbeatLoop(rp types.IRosProvider) {
-	t := time.NewTicker(poseHeartbeatInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-s.stopCh:
-			return
-		case <-t.C:
-			s.mu.Lock()
-			last := s.lastPoseCallbackAt
-			s.mu.Unlock()
-			if last.IsZero() || time.Since(last) <= poseStalenessThreshold {
-				continue
-			}
-			logrus.Warnf("sensorlog: pose callback silent for %s, re-subscribing", time.Since(last))
-			rp.UnSubscribe("/xbot_positioning/xb_pose", "sensorlog-pose")
-			go s.subscribeWithRetry(rp, "/xbot_positioning/xb_pose", "sensorlog-pose", s.onPose)
-			// Bump the timestamp so we don't flap before the new sub has a chance.
-			s.mu.Lock()
-			s.lastPoseCallbackAt = time.Now()
-			s.mu.Unlock()
-		}
-	}
 }
 
 func (s *SensorLogProvider) sampleLoop() {
