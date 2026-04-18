@@ -5,6 +5,7 @@ import {CommandCenter} from '../components/commandCenter/CommandCenter.tsx';
 import {BatteryCard} from '../components/commandCenter/BatteryCard.tsx';
 import {MotorHealthCard} from '../components/commandCenter/MotorHealthCard.tsx';
 import {SystemStatusCard} from '../components/commandCenter/SystemStatusCard.tsx';
+import {NetworkCard} from '../components/commandCenter/NetworkCard.tsx';
 import {DiagnosticsSection} from '../components/commandCenter/DiagnosticsSection.tsx';
 
 const SectionHeading = ({children}: {children: string}) => (
@@ -41,6 +42,7 @@ export const OpenMowerPage = () => {
                     <BatteryCard/>
                     <MotorHealthCard/>
                     <SystemStatusCard/>
+                    <NetworkCard/>
                 </div>
                 <SectionHeading>Diagnostics</SectionHeading>
                 <DiagnosticsSection/>

@@ -36,6 +36,7 @@ const SENSOR_DEFS: SensorDef[] = [
     {key: 'right_temp_motor', unit: '°C', stroke: '#ea580c'},
     {key: 'v_battery', unit: 'V', stroke: '#84cc16'},
     {key: 'gps_accuracy', unit: 'cm', stroke: '#eab308'},
+    {key: 'wifi_percent', unit: '%', stroke: '#60a5fa'},
 ];
 const DEF_BY_KEY = new Map(SENSOR_DEFS.map(s => [s.key, s]));
 

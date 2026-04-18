@@ -55,9 +55,12 @@ var sensorColumnWhitelist = map[string]string{
 	"right_current":    "right_current",
 	"right_temp_motor": "right_temp_motor",
 	// Robot
-	"v_battery":     "v_battery",
-	"gps_accuracy":  "gps_accuracy",
-	"speed": "speed",
+	"v_battery":    "v_battery",
+	"gps_accuracy": "gps_accuracy",
+	"speed":        "speed",
+	// WiFi
+	"wifi_percent": "wifi_percent",
+	"wifi_dbm":     "wifi_dbm",
 }
 
 // SensorLogProvider collects sensor data while mowing and stores it in SQLite.
@@ -98,6 +101,11 @@ type SensorLogProvider struct {
 	// Battery
 	lastVBattery float32
 
+	// WiFi (from /xbot_monitoring/sensors/om_wifi_*/data)
+	lastWifiIface   string
+	lastWifiDbm     float64
+	lastWifiPercent float64
+
 	retentionDays int
 	stopCh        chan struct{}
 }
@@ -120,6 +128,16 @@ type escSubset struct {
 // highLevelStatusSubset extracts StateName from "/mower_logic/current_state" JSON.
 type highLevelStatusSubset struct {
 	StateName string `json:"StateName"`
+}
+
+// wifiDoubleSubset / wifiStringSubset match xbot_msgs/SensorDataDouble and
+// SensorDataString respectively — just the fields we need.
+type wifiDoubleSubset struct {
+	Data float64 `json:"Data"`
+}
+
+type wifiStringSubset struct {
+	Data string `json:"Data"`
 }
 
 // absolutePoseSubset extracts position and accuracy from "/xbot_positioning/xb_pose" JSON.
@@ -153,7 +171,9 @@ CREATE TABLE IF NOT EXISTS sensor_samples (
 	right_temp_motor REAL NOT NULL DEFAULT 0,
 	v_battery       REAL NOT NULL DEFAULT 0,
 	gps_accuracy    REAL NOT NULL DEFAULT 0,
-	speed           REAL NOT NULL DEFAULT 0
+	speed           REAL NOT NULL DEFAULT 0,
+	wifi_percent    REAL NOT NULL DEFAULT 0,
+	wifi_dbm        REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sensor_ts ON sensor_samples(timestamp);
 `
@@ -169,6 +189,8 @@ var migrateColumns = []string{
 	"v_battery REAL NOT NULL DEFAULT 0",
 	"gps_accuracy REAL NOT NULL DEFAULT 0",
 	"speed REAL NOT NULL DEFAULT 0",
+	"wifi_percent REAL NOT NULL DEFAULT 0",
+	"wifi_dbm REAL NOT NULL DEFAULT 0",
 }
 
 func NewSensorLogProvider(rosProvider types.IRosProvider, dbPath string) *SensorLogProvider {
@@ -219,6 +241,9 @@ func (s *SensorLogProvider) subscribeToRos(rosProvider types.IRosProvider) {
 	go s.subscribeWithRetry(rosProvider, "/mower/status", "sensorlog-status", s.onMowerStatus)
 	go s.subscribeWithRetry(rosProvider, "/mower_logic/current_state", "sensorlog-hls", s.onHighLevelState)
 	go s.subscribeWithRetry(rosProvider, "/xbot_positioning/xb_pose", "sensorlog-pose", s.onPose)
+	go s.subscribeWithRetry(rosProvider, "/xbot_monitoring/sensors/om_wifi_iface/data", "sensorlog-wifi-iface", s.onWifiIface)
+	go s.subscribeWithRetry(rosProvider, "/xbot_monitoring/sensors/om_wifi_signal_dbm/data", "sensorlog-wifi-dbm", s.onWifiDbm)
+	go s.subscribeWithRetry(rosProvider, "/xbot_monitoring/sensors/om_wifi_signal_percent/data", "sensorlog-wifi-pct", s.onWifiPercent)
 }
 
 // subscribeWithRetry keeps attempting rosProvider.Subscribe until it succeeds
@@ -275,6 +300,36 @@ func (s *SensorLogProvider) onHighLevelState(msg []byte) {
 	s.mu.Unlock()
 }
 
+func (s *SensorLogProvider) onWifiIface(msg []byte) {
+	var v wifiStringSubset
+	if err := json.Unmarshal(msg, &v); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastWifiIface = v.Data
+	s.mu.Unlock()
+}
+
+func (s *SensorLogProvider) onWifiDbm(msg []byte) {
+	var v wifiDoubleSubset
+	if err := json.Unmarshal(msg, &v); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastWifiDbm = v.Data
+	s.mu.Unlock()
+}
+
+func (s *SensorLogProvider) onWifiPercent(msg []byte) {
+	var v wifiDoubleSubset
+	if err := json.Unmarshal(msg, &v); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastWifiPercent = v.Data
+	s.mu.Unlock()
+}
+
 func (s *SensorLogProvider) onPose(msg []byte) {
 	var pose absolutePoseSubset
 	if err := json.Unmarshal(msg, &pose); err != nil {
@@ -311,8 +366,9 @@ func (s *SensorLogProvider) sampleLoop() {
 		 mow_rpm, mow_current, mow_temp_motor, mow_temp_pcb,
 		 left_rpm, left_current, left_temp_motor,
 		 right_rpm, right_current, right_temp_motor,
-		 v_battery, gps_accuracy, speed)
-		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?)`
+		 v_battery, gps_accuracy, speed,
+		 wifi_percent, wifi_dbm)
+		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?)`
 
 	stmt, err := s.db.Prepare(insertSQL)
 	if err != nil {
@@ -334,6 +390,7 @@ func (s *SensorLogProvider) sampleLoop() {
 					s.lastLeftRpm, s.lastLeftCurrent, s.lastLeftTempMot,
 					s.lastRightRpm, s.lastRightCurrent, s.lastRightTempMot,
 					s.lastVBattery, float64(s.lastGpsAccuracy)*100.0, s.lastSpeed,
+					s.lastWifiPercent, s.lastWifiDbm,
 				)
 				if err != nil {
 					logrus.Errorf("sensorlog: insert failed: %v", err)
@@ -451,8 +508,9 @@ func (s *SensorLogProvider) SeedMockData(count int) error {
 		 mow_rpm, mow_current, mow_temp_motor, mow_temp_pcb,
 		 left_rpm, left_current, left_temp_motor,
 		 right_rpm, right_current, right_temp_motor,
-		 v_battery, gps_accuracy, speed)
-		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?)`
+		 v_battery, gps_accuracy, speed,
+		 wifi_percent, wifi_dbm)
+		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?)`
 
 	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
@@ -529,12 +587,21 @@ func (s *SensorLogProvider) SeedMockData(count int) error {
 			gpsAccuracy += 0.03 + rand.Float64()*0.02
 		}
 
+		// WiFi: percent ~30-95, dBm ~-75..-45, dips near "tree zone"
+		wifiPct := 60.0 + rand.Float64()*35.0
+		wifiDbm := -55.0 + rand.Float64()*10.0
+		if x > 8.0 {
+			wifiPct -= 20.0 + rand.Float64()*15.0
+			wifiDbm -= 10.0 + rand.Float64()*5.0
+		}
+
 		if _, err := stmt.Exec(
 			ts, x, y,
 			int(mowRpm), mowCurrent, mowTempMotor, mowTempPcb,
 			leftRpm, leftCurrent, leftTempMot,
 			rightRpm, rightCurrent, rightTempMot,
 			vBattery, gpsAccuracy, speed,
+			wifiPct, wifiDbm,
 		); err != nil {
 			return err
 		}

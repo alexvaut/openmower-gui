@@ -93,6 +93,10 @@ type RosProvider struct {
 	currentPathSubscriber     *goroslib.Subscriber
 	poseSubscriber            *goroslib.Subscriber
 	mowerLogicParamsSubscriber *goroslib.Subscriber
+	wifiIfaceSubscriber       *goroslib.Subscriber
+	wifiDbmSubscriber         *goroslib.Subscriber
+	wifiPercentSubscriber     *goroslib.Subscriber
+	wifiStatus                wifiStatus
 	subscribers               map[string]map[string]*RosSubscriber
 	lastMessage               map[string][]byte
 	lastMessageAt             map[string]time.Time
@@ -272,6 +276,15 @@ func (p *RosProvider) resetSubscribers() {
 	if p.mowerLogicParamsSubscriber != nil {
 		p.mowerLogicParamsSubscriber.Close()
 	}
+	if p.wifiIfaceSubscriber != nil {
+		p.wifiIfaceSubscriber.Close()
+	}
+	if p.wifiDbmSubscriber != nil {
+		p.wifiDbmSubscriber.Close()
+	}
+	if p.wifiPercentSubscriber != nil {
+		p.wifiPercentSubscriber.Close()
+	}
 	p.node = nil
 	p.nodeCreatedAt = time.Time{}
 	p.currentPathSubscriber = nil
@@ -287,6 +300,10 @@ func (p *RosProvider) resetSubscribers() {
 	p.ticksSubscriber = nil
 	p.poseSubscriber = nil
 	p.mowerLogicParamsSubscriber = nil
+	p.wifiIfaceSubscriber = nil
+	p.wifiDbmSubscriber = nil
+	p.wifiPercentSubscriber = nil
+	p.wifiStatus = wifiStatus{}
 	p.mowingPaths = []*nav_msgs.Path{}
 	p.mowingPath = nil
 	p.mowingPathOrigin = nil
@@ -626,7 +643,81 @@ func (p *RosProvider) initSubscribers() error {
 		})
 		logrus.Info("Subscribed to /mower_logic/parameter_updates")
 	}
+	if p.wifiIfaceSubscriber == nil {
+		p.wifiIfaceSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/xbot_monitoring/sensors/om_wifi_iface/data",
+			Callback: func(msg *xbot_msgs.SensorDataString) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				v := msg.Data
+				p.wifiStatus.Iface = &v
+				p.publishWifiStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_iface/data")
+	}
+	if p.wifiDbmSubscriber == nil {
+		p.wifiDbmSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/xbot_monitoring/sensors/om_wifi_signal_dbm/data",
+			Callback: func(msg *xbot_msgs.SensorDataDouble) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				v := msg.Data
+				p.wifiStatus.SignalDbm = &v
+				p.publishWifiStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_signal_dbm/data")
+	}
+	if p.wifiPercentSubscriber == nil {
+		p.wifiPercentSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:  node,
+			Topic: "/xbot_monitoring/sensors/om_wifi_signal_percent/data",
+			Callback: func(msg *xbot_msgs.SensorDataDouble) {
+				p.mtx.Lock()
+				defer p.mtx.Unlock()
+				v := msg.Data
+				p.wifiStatus.SignalPercent = &v
+				p.publishWifiStatus()
+			},
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /xbot_monitoring/sensors/om_wifi_signal_percent/data")
+	}
 	return nil
+}
+
+// wifiStatus is the aggregated WiFi state republished on the synthetic
+// "/wifi" topic. Sources: xbot_monitoring sensor publications, each one
+// ~1Hz. Fields are optional pointers so the frontend can distinguish
+// "never seen" from "zero".
+type wifiStatus struct {
+	Iface         *string  `json:"iface,omitempty"`
+	SignalDbm     *float64 `json:"signalDbm,omitempty"`
+	SignalPercent *float64 `json:"signalPercent,omitempty"`
+}
+
+const wifiVirtualTopic = "/wifi"
+
+// publishWifiStatus marshals p.wifiStatus and stores/fans-out on the
+// virtual "/wifi" topic. Caller must hold p.mtx.
+func (p *RosProvider) publishWifiStatus() {
+	msgJson, err := json.Marshal(p.wifiStatus)
+	if err != nil {
+		logrus.Error(xerrors.Errorf("failed to marshal wifi status: %w", err))
+		return
+	}
+	p.lastMessage[wifiVirtualTopic] = msgJson
+	p.lastMessageAt[wifiVirtualTopic] = time.Now()
+	if subs, ok := p.subscribers[wifiVirtualTopic]; ok {
+		for _, cb := range subs {
+			cb.Publish(msgJson)
+		}
+	}
 }
 
 func cbHandler[T any](p *RosProvider, topic string) func(msg T) {

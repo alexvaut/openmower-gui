@@ -253,6 +253,15 @@ export type HighLevelStatus = {
     CurrentPathIndex?: number
 }
 
+// Aggregated WiFi snapshot produced server-side on the "/wifi" virtual topic.
+// Fields populate independently as each underlying sensor publishes
+// (om_wifi_iface / signal_dbm / signal_percent).
+export type WifiStatus = {
+    iface?: string
+    signalDbm?: number
+    signalPercent?: number
+}
+
 export const enum AbsolutePoseFlags {
     RTK = 1,
     FIXED = 2,

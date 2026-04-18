@@ -2,7 +2,8 @@ export type SensorType =
     | 'mow_rpm' | 'mow_current' | 'mow_temp_motor' | 'mow_temp_pcb'
     | 'left_rpm' | 'left_current' | 'left_temp_motor'
     | 'right_rpm' | 'right_current' | 'right_temp_motor'
-    | 'v_battery' | 'gps_accuracy' | 'speed';
+    | 'v_battery' | 'gps_accuracy' | 'speed'
+    | 'wifi_percent' | 'wifi_dbm';
 
 export interface SensorSample {
     t: number;  // unix timestamp
@@ -135,4 +136,6 @@ export const SensorTypeLabels: Record<SensorType, string> = {
     v_battery: 'Battery V',
     gps_accuracy: 'GPS Acc. (cm)',
     speed: 'Speed',
+    wifi_percent: 'WiFi %',
+    wifi_dbm: 'WiFi dBm',
 };

@@ -151,7 +151,7 @@ func SetDockingPointRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 // @Summary subscribe to a topic
 // @Description subscribe to a topic
 // @Tags openmower
-// @Param topic path string true "topic to subscribe to, could be: diagnostics, status, gps, imu, ticks, highLevelStatus, mowerLogicParams"
+// @Param topic path string true "topic to subscribe to, could be: diagnostics, status, gps, imu, ticks, highLevelStatus, mowerLogicParams, wifi"
 // @Router /openmower/subscribe/{topic} [get]
 func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 	group.GET("/subscribe/:topic", func(c *gin.Context) {
@@ -193,6 +193,8 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			def, err = subscribe(provider, c, conn, "/move_base_flex/FTCPlanner/global_plan", -1)
 		case "mowingPath":
 			def, err = subscribe(provider, c, conn, "/mowing_path", -1)
+		case "wifi":
+			def, err = subscribe(provider, c, conn, "/wifi", -1)
 		}
 		if err != nil {
 			log.Println(err.Error())
