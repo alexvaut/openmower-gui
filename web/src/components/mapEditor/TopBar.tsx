@@ -17,7 +17,11 @@ import {useMapEditorStore} from './useMapEditorStore';
 
 export type ViewMode = 'edit' | 'live';
 
-export function TopBar({
+// Desktop map-editor controls. Rendered into the shared AppHeader's controls
+// slot — so it intentionally has no header shell of its own (no fixed height,
+// no background). The header container handles chrome; this component only
+// supplies the page-specific buttons.
+export function MapEditorControls({
     canvasSize,
     mode,
     onModeChange,
@@ -70,8 +74,7 @@ export function TopBar({
 
     const isEdit = mode === 'edit';
     return (
-        <div className="h-12 shrink-0 flex items-center px-3 gap-2 bg-slate-900 border-b border-slate-800 text-slate-100">
-            <div className="text-sm font-semibold mr-2">Map</div>
+        <>
             <Segmented
                 size="small"
                 value={mode}
@@ -135,13 +138,12 @@ export function TopBar({
                             ]}
                         />
                     </Tooltip>
+                    <div className="text-xs text-slate-400 ml-2 truncate">{filename}{dirty ? ' — modified' : ''}</div>
                 </>
             )}
             {!isEdit && (
-                <span className="text-xs text-slate-500">Satellite + live telemetry (read-only)</span>
+                <span className="text-xs text-slate-500 whitespace-nowrap">Satellite + live telemetry (read-only)</span>
             )}
-            <div className="flex-1"/>
-            <div className="text-xs text-slate-400">{filename}{isEdit && dirty ? ' — modified' : ''}</div>
-        </div>
+        </>
     );
 }

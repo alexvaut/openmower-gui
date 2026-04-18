@@ -1,2 +1,96 @@
 @tailwind components;
 @tailwind utilities;
+
+/* App header — shared across all pages.
+   On mobile the antd Sider renders a zero-width trigger at top:0 left:0;
+   pad the title out of its way so nothing in the header hides under it. */
+@media (max-width: 1023px) {
+    .app-header {
+        padding-left: 48px !important;
+    }
+
+    /* Compact MowerStatus on phone: no big gutter, smaller type. */
+    .app-header-status .ant-row {
+        flex-wrap: nowrap;
+        margin: 0 !important;
+        gap: 6px;
+    }
+    .app-header-status .ant-col {
+        padding: 0 !important;
+    }
+    .app-header-status .ant-statistic-content,
+    .app-header-status .ant-statistic-content-value {
+        font-size: 12px !important;
+    }
+    .app-header-status .ant-statistic-content-prefix {
+        margin-inline-end: 2px;
+    }
+
+    /* Scroll the controls slot when it overflows (long edit toolbar etc.). */
+    .app-header-controls {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+.map-editor-drawer {
+    display: flex;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.drawer-close-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 40;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    color: #e2e8f0;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 1023px) {
+    .map-editor-drawer.map-editor-drawer-right {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        z-index: 30;
+        transition: transform 200ms ease;
+        max-width: 85vw;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        transform: translateX(100%);
+    }
+
+    .map-editor-drawer.map-editor-drawer-right.is-open {
+        transform: translateX(0);
+    }
+
+    .drawer-close-btn {
+        display: inline-flex;
+    }
+
+    .map-editor-backdrop {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    /* Graph panel header: hide the long hint/summary so the Graph toggle
+       and back/fwd/refresh don't get pushed off-screen. */
+    .map-editor-root .params-window-summary,
+    .map-editor-root .params-drag-hint {
+        display: none;
+    }
+}

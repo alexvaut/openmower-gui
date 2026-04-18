@@ -238,8 +238,8 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
                     <span className="text-xs font-normal text-slate-500">({selected.length} selected)</span>
                 </div>
                 <div className="flex items-center gap-4 text-[11px] text-slate-500">
-                    <span>{windowSummary}</span>
-                    <span>drag to zoom · dbl-click to reset</span>
+                    <span className="params-window-summary">{windowSummary}</span>
+                    <span className="params-drag-hint">drag to zoom · dbl-click to reset</span>
                     <div className="flex items-center gap-2">
                         <div
                             role="button"

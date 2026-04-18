@@ -1,4 +1,4 @@
-import {App, Col, Row, Select, Typography} from "antd";
+import {App, Col, Row, Select} from "antd";
 import {useEffect, useState} from "react";
 import Terminal, {ColorMode, TerminalOutput} from "react-terminal-ui";
 import AsyncButton from "../components/AsyncButton.tsx";
@@ -7,6 +7,7 @@ import {useApi} from "../hooks/useApi.ts";
 import {StyledTerminal} from "../components/StyledTerminal.tsx";
 import ansiHTML from "../utils/ansi.ts";
 import {MowerActions} from "../components/MowerActions.tsx";
+import {PageChrome} from "../components/PageChrome.tsx";
 
 type ContainerList = { value: string, label: string, status: "started" | "stopped", labels: Record<string, string> };
 export const LogsPage = () => {
@@ -106,9 +107,7 @@ export const LogsPage = () => {
     };
     const selectedContainer = containers.find((container) => container.value === containerId);
     return <Row>
-        <Col span={24}>
-            <Typography.Title level={2}>Container logs</Typography.Title>
-        </Col>
+        <PageChrome title="Container logs"/>
         <Col span={24}>
             <MowerActions/>
         </Col>

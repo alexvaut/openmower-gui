@@ -7,6 +7,7 @@ import {SettingsComponent} from "../components/SettingsComponent.tsx";
 import AsyncButton from "../components/AsyncButton.tsx";
 import {FlashGPSComponent} from "../components/FlashGPSComponent.tsx";
 import {SettingsConfig} from "../hooks/useSettings.ts";
+import {PageChrome} from "../components/PageChrome.tsx";
 
 const {Step} = Steps;
 
@@ -80,8 +81,8 @@ const SetupWizard: React.FC = () => {
 
 
     return <Row gutter={[16, 32]}>
+        <PageChrome title="Setup"/>
         <Col span={24}>
-            <Typography.Title level={2}>Setup</Typography.Title>
             <Typography.Title level={5} style={{color: "#ff0000"}}>WARNING: This setup wizard will flash your
                 motherboard firmware and the GPS configuration. Run at your own risk and be careful with voltage
                 settings if you change them.</Typography.Title>

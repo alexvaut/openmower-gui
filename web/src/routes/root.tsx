@@ -8,7 +8,9 @@ import {
     RocketOutlined,
     SettingOutlined
 } from '@ant-design/icons';
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
+import {AppHeader} from "../components/AppHeader";
+import {PageChromeProvider} from "../components/PageChrome";
 
 let menu: MenuProps['items'] = [
     {
@@ -46,6 +48,8 @@ let menu: MenuProps['items'] = [
 export default () => {
     const route = useMatches()
     const navigate = useNavigate()
+    const [collapsed, setCollapsed] = useState(false)
+    const [broken, setBroken] = useState(false)
     useEffect(() => {
         if (route.length === 1 && route[0].pathname === "/") {
             navigate({
@@ -58,6 +62,9 @@ export default () => {
             <Layout.Sider breakpoint="lg"
                           collapsedWidth="0"
                           zeroWidthTriggerStyle={{top: 0}}
+                          collapsed={collapsed}
+                          onCollapse={setCollapsed}
+                          onBreakpoint={setBroken}
             >
                 <Menu theme="dark"
                       mode="inline"
@@ -67,12 +74,16 @@ export default () => {
                                   pathname: info.key,
                               })
                           }
+                          if (broken) setCollapsed(true)
                       }} selectedKeys={route.map(r => r.pathname)} items={menu}/>
             </Layout.Sider>
             <Layout style={{height: "100%"}}>
-                <Layout.Content style={{padding: "10px 24px 0px 24px", height: "100%", backgroundColor: 'white'}}>
-                    <Outlet/>
-                </Layout.Content>
+                <PageChromeProvider>
+                    <AppHeader/>
+                    <Layout.Content style={{padding: "10px 24px 0px 24px", minHeight: 0, flex: 1, backgroundColor: 'white', overflow: 'auto'}}>
+                        <Outlet/>
+                    </Layout.Content>
+                </PageChromeProvider>
             </Layout>
         </Layout>);
 }
