@@ -1,21 +1,17 @@
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
-import {useApi} from "../hooks/useApi.ts";
-import {App, Button, Col, Input, Modal, Row, Select, Slider, Typography} from "antd";
+import {App, Button, Col, Input, Modal, Row} from "antd";
 import {useWS} from "../hooks/useWS.ts";
 import centroid from "@turf/centroid";
 import union from "@turf/union";
 import {featureCollection} from "@turf/helpers"
-import {ChangeEvent, useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useState} from "react";
 import {AbsolutePose, Map as MapType, MapArea, Marker, MarkerArray, Path, Twist} from "../types/ros.ts";
 import DrawControl from "../components/DrawControl.tsx";
 import Map, {Layer, Source, useMap} from 'react-map-gl';
 import type {Feature} from 'geojson';
 import {FeatureCollection, Polygon, Position} from "geojson";
-import {MowerActions, useMowerAction} from "../components/MowerActions.tsx";
-import {MowerMapMapArea,MowerReplaceMapSrvReq} from "../api/Api.ts";
-import AsyncButton from "../components/AsyncButton.tsx";
 import {MapStyle} from "./MapStyle.tsx";
-import {converter, drawLine, getQuaternionFromHeading, itranspose, transpose} from "../utils/map.tsx";
+import {converter, drawLine, transpose} from "../utils/map.tsx";
 import {Joystick} from "react-joystick-component";
 import {useHighLevelStatus} from "../hooks/useHighLevelStatus.ts";
 import {IJoystickUpdateEvent} from "react-joystick-component/build/lib/Joystick";
@@ -23,14 +19,9 @@ import {useSettings} from "../hooks/useSettings.ts";
 import {useConfig} from "../hooks/useConfig.tsx";
 import {useEnv} from "../hooks/useEnv.tsx";
 import {Spinner} from "../components/Spinner.tsx";
-import AsyncDropDownButton from "../components/AsyncDropDownButton.tsx";
 import {useSharedSensorLog} from "../components/map/SensorLogContext";
-import {ColorProfile, colorProfileExpr, colorProfileGradient, ColorProfileLabels, SensorType, SensorTypeLabels, TimeRange, TimeRangePresets} from "../types/sensorlog.ts";
+import {colorProfileExpr} from "../types/sensorlog.ts";
 import {MowingFeature, MowingAreaFeature, MowerFeatureBase, DockFeatureBase, MowingFeatureBase, LineFeatureBase, NavigationFeature, ObstacleFeature, ActivePathFeature, PathFeature } from "../types/map.ts";
-
-
-let offsetXTimeout: any = null;
-let offsetYTimeout: any = null;
 
 class mowingAreaEdit  {
     id?: string;
@@ -80,7 +71,6 @@ const SensorLayerOrderKeeper = ({visible}: {visible: boolean}) => {
 
 export const MapPage = () => {
     const {notification} = App.useApp();
-    const mowerAction = useMowerAction()
     const highLevelStatus = useHighLevelStatus()
     const [offsetX, setOffsetX] = useState(0);
     const [offsetY, setOffsetY] = useState(0);
@@ -95,10 +85,8 @@ export const MapPage = () => {
         type: "FeatureCollection",
         features: []
     })
-    const {config, setConfig} = useConfig(["gui.map.offset.x", "gui.map.offset.y"])
+    const {config} = useConfig(["gui.map.offset.x", "gui.map.offset.y"])
     const envs = useEnv()
-    const guiApi = useApi()
-    const [manualMode, setManualMode] = useState<number | undefined>()
     const [tileUri, setTileUri] = useState<string | undefined>()
     const [editMap, setEditMap] = useState<boolean>(false)
     const [features, setFeatures] = useState<Record<string, MowingFeature>>({});
@@ -806,320 +794,9 @@ export const MapPage = () => {
     // Re-fetching is handled inside useSensorLog — it auto-fetches whenever
     // sensor, time range, custom range, or refreshTick change while visible.
 
-    function handleEditMap() {
-        setEditMap(!editMap)
-    }
-
-
     function cancelAreaModal() {
         setAreaModelOpen(false);
     }
-
-    async function handleSaveMap() {
-        const areas: Record<string, MowerMapMapArea[]> = {
-            "area":[],
-            "navigation":[],
-        }
-        const sorted =  Object.values<MowingFeature>(features).sort((a: MowingFeature,b: MowingFeature): number => {
-            if ((a instanceof MowingFeatureBase) && (!(b instanceof MowingFeatureBase)))
-                return -1;
-
-            if ((b instanceof MowingFeatureBase) && (!(a instanceof MowingFeatureBase)))
-                return 1;
-
-            if ((b instanceof MowingFeatureBase) && ((a instanceof MowingFeatureBase)))
-                return a.properties.mowing_order > b.properties.mowing_order ? 1 :-1;
-
-            return 0;
-        })
-
-
-        for (const [i,f] of Object.entries(sorted)) {
-            if (f instanceof MowingFeatureBase) {
-
-                const idDetails = f.id.split("-")
-                if (idDetails.length != 4) {
-                    if (console.error)
-                        console.error("Invalid id " + f.id);
-                    continue
-                }
-                const type = idDetails[0]
-
-                if (!areas[type])
-                    throw Error("Unable to find area type " + type);
-
-                let index = parseInt(i);
-                if (f instanceof ObstacleFeature)
-                    index = f.getMowingArea().getIndex();  
-                else {
-                    areas[type][index] = {
-                        name:  f.properties?.name ?? ''
-                    }
-                } 
-
-                const points = f.geometry.coordinates[0].map((point) => {
-                    return itranspose(offsetX, offsetY, datum, point[1], point[0])
-                });
-
-                
-       
-
-                if ((f instanceof MowingAreaFeature)||(f instanceof NavigationFeature))  {
-                    areas[type][index].area = {
-                    
-                        points: points.map((point) => {
-                            return {
-                                x: point[0],
-                                y: point[1],
-                                z: 0,
-                            }
-                        })
-                    }
-                } else if (f instanceof ObstacleFeature) {
-                    if (!areas[type][index])
-                        throw Error("Unable to find area " + index.toString());
-
-            
-                    areas[type][index].obstacles = [...(areas[type][index].obstacles ?? []), {
-                        points: points.map((point) => {
-                            return {
-                                x: point[0],
-                                y: point[1],
-                                z: 0,
-                            }
-                        })
-                    }]
-                }
-            }
-        }
-     
-
-        const updateMsg : MowerReplaceMapSrvReq = {
-            areas : []
-        };
-        for (const [type, areasOfType] of Object.entries(areas)) {
-            for (const [_, area] of Object.entries(areasOfType)) {
-                const narea = {
-                    area: area,
-                    isNavigationArea: type == "navigation",
-                };
-                updateMsg.areas.push(narea);
-
-            }
-        }
-        try {
-            await guiApi.openmower.mapReplace(updateMsg)
-            notification.success({
-                message: "Area saved",
-            })
-            setEditMap(false)
-        } catch (e: any) {
-            notification.error({
-                message: "Failed to save area",
-                description: e.message,
-            })
-        }
-
-        if (!map) {
-            await guiApi.openmower.mapDockingCreate({
-                dockingPose: {
-                    orientation: {
-                        x: 0,
-                        y: 0,
-                        z: 0,
-                        w: 1,
-                    },
-                    position: {
-                        x: 0,
-                        y: 0,
-                        z: 0,
-                    }
-                }
-            })
-        } else {
-            let quaternionFromHeading = getQuaternionFromHeading(map?.DockHeading!!);
-            await guiApi.openmower.mapDockingCreate({
-                dockingPose: {
-                    orientation: {
-                        x: quaternionFromHeading.X!!,
-                        y: quaternionFromHeading.Y!!,
-                        z: quaternionFromHeading.Z!!,
-                        w: quaternionFromHeading.W!!,
-                    },
-                    position: {
-                        x: map?.DockX!!,
-                        y: map?.DockY!!,
-                        z: 0,
-                    }
-                }
-            })
-        }
-
-    }
-
-    const handleBackupMap = () => {
-        const a = document.createElement("a");
-        document.body.appendChild(a);
-        a.style.display = "none";
-        const json = JSON.stringify(map),
-            blob = new Blob([json], {type: "octet/stream"}),
-            url = window.URL.createObjectURL(blob);
-        a.href = url;
-        a.download = "map.json";
-        a.click();
-        window.URL.revokeObjectURL(url);
-    };
-    
-    const handleRestoreMap = () => {
-        /*<input id="file-input" type="file" name="name" style="display: none;" />*/
-        const input = document.createElement("input");
-        input.type = "file";
-        input.style.display = "none";
-        document.body.appendChild(input);
-        input.addEventListener('change', (event) => {
-            setEditMap(true)
-            const file = (event as unknown as ChangeEvent<HTMLInputElement>).target?.files?.[0];
-            if (!file) {
-                return;
-            }
-            const reader = new FileReader();
-            reader.addEventListener('load', (event) => {
-                let content = event.target?.result as string;
-                let parts = content.split(",");
-                let newMap = JSON.parse(atob(parts[1])) as MapType;
-                setMap(newMap)
-            });
-            reader.readAsDataURL(file);
-        })
-        input.click();
-    };
-
-    const handleDownloadGeoJSON = () => {
-        const geojson = {
-            type: "FeatureCollection",
-            features: Object.values(features)
-        };
-        const a = document.createElement("a");
-        document.body.appendChild(a);
-        a.style.display = "none";
-        const json = JSON.stringify(geojson),
-            blob = new Blob([json], { type: "application/geo+json" }),
-            url = window.URL.createObjectURL(blob);
-        a.href = url;
-        a.download = "map.geojson";
-        a.click();
-        window.URL.revokeObjectURL(url);
-    };
-
-    const handleUploadGeoJSON = () => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.style.display = "none";
-        document.body.appendChild(input);
-        input.addEventListener('change', (event) => {
-            const file = (event as unknown as ChangeEvent<HTMLInputElement>).target?.files?.[0];
-            if (!file) {
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const geojson = JSON.parse(event.target?.result as string) as FeatureCollection;
-                const geojsonfeatures = geojson.features.reduce((acc, feature) => {
-                    acc[feature.id as string] = feature;
-                    return acc;
-                }, {} as Record<string, Feature>);
-
-                const newFeatures = {} as Record<string, MowingFeature>;
-                Object.values(geojsonfeatures).forEach(element => {
-                    const areaType = element?.properties?.feature_type as string;
-    
-                    let nfeat = null;
-                    if (!element.id)
-                        return;
-
-                    if (typeof element.id == 'number')
-                        element.id = element.id.toString();
-
-                    if (element.geometry.type == 'Polygon') {
-            
-
-                        
-
-                        switch (areaType) {
-                            case 'workarea':
-                                nfeat =  element as MowingAreaFeature;
-                                //nfeat = new MowingAreaFeature(element.id, element?.properties?.mowing_order??100);
-                                //nfeat.geometry.coordinates = origFeature.geometry.coordinates;
-                                //nfeat.setName(origFeature?.properties?.name)
-                                break;
-                            case 'navigation':
-                                nfeat =  element as NavigationFeature;
-                                //nfeat = new NavigationFeature(element.id);
-                                //nfeat.geometry.coordinates = origFeature.geometry.coordinates;
-                                break;
-                            case 'obstacle':
-                                nfeat =  element as ObstacleFeature;
-                                //nfeat = new ObstacleFeature(element.id, newFeatures[element.mowing_area.id]);
-                                //nfeat.geometry.coordinates = origFeature.geometry.coordinates;
-                                break;
-                            default:
-                                notification.error({
-                                    message: `Unknown type ${areaType}`
-                                })
-                                setFeatures({...features});//revert
-                                return;
-                        }
-                    }
-                    else {
-                        switch (areaType) {
-                            case 'dock':
-                                nfeat =  element as DockFeatureBase;
-                            //nfeat = new DockFeatureBase(origFeature.geometry.coordinates);
-                                break;
-                                default:
-                            notification.error({
-                                message: `Unknown type ${areaType}`
-                            })
-                            setFeatures({...features});//revert
-                            return;
-                        }
-
-                    }
-                    newFeatures[element.id] = nfeat;
-                });
-
-                setFeatures(newFeatures);
-            };
-            reader.readAsText(file);
-        });
-        input.click();
-    };
-
-    const handleManualMode = async () => {
-        await mowerAction(
-            "high_level_control",
-            {
-                Command: 3,
-            }
-        )()
-        setManualMode(setInterval(() => {
-            (async () => {
-                await mowerAction("mow_enabled", {MowEnabled: 1, MowDirection: 0})()
-            })()
-        }, 10000) as unknown as number)
-    };
-
-    const handleStopManualMode = async () => {
-        await mowerAction(
-            "high_level_control",
-            {
-                Command: 2,
-            }
-        )()
-        clearInterval(manualMode)
-        setManualMode(undefined)
-        await mowerAction("mow_enabled", {MowEnabled: 0, MowDirection: 0})()
-    };
 
     const handleJoyMove = (event: IJoystickUpdateEvent) => {
         let newVar: Twist = {
@@ -1151,47 +828,6 @@ export const MapPage = () => {
         };
         joyStream.sendJsonMessage(newVar)
     };
-
-    const handleOffsetX = (value: number) => {
-        if (offsetXTimeout != null) {
-            clearTimeout(offsetXTimeout)
-        }
-        offsetXTimeout = setTimeout(() => {
-            (async () => {
-                try {
-                    await setConfig({
-                        "gui.map.offset.x": value.toString(),
-                    })
-                } catch (e: any) {
-                    notification.error({
-                        message: "Failed to save offset",
-                        description: e.message,
-                    })
-                }
-            })()
-        }, 1000)
-        setOffsetX(value)
-    }
-    const handleOffsetY = (value: number) => {
-        if (offsetYTimeout != null) {
-            clearTimeout(offsetYTimeout)
-        }
-        offsetYTimeout = setTimeout(() => {
-            (async () => {
-                try {
-                    await setConfig({
-                        "gui.map.offset.y": value.toString(),
-                    })
-                } catch (e: any) {
-                    notification.error({
-                        message: "Failed to save offset",
-                        description: e.message,
-                    })
-                }
-            })()
-        }, 1000)
-        setOffsetY(value)
-    }
 
     if (_datumLon == 0 || _datumLat == 0) {
         return <Spinner/>
