@@ -24,10 +24,6 @@ export interface ApiErrorResponse {
   error?: string;
 }
 
-export interface ApiGetConfigResponse {
-    tileUri?: string;
-}
-
 export interface ApiGetSettingsResponse {
     settings?: Record<string, string>;
 }
@@ -339,22 +335,6 @@ export class HttpClient<SecurityDataType = unknown> {
  */
 export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDataType> {
     config = {
-        /**
-         * @description get config env from backend
-         *
-         * @tags config
-         * @name EnvsList
-         * @summary get config env from backend
-         * @request GET:/config/envs
-         */
-        envsList: (params: RequestParams = {}) =>
-            this.request<ApiGetConfigResponse, ApiErrorResponse>({
-                path: `/config/envs`,
-                method: "GET",
-                format: "json",
-                ...params,
-            }),
-
         /**
          * @description get config from backend
          *

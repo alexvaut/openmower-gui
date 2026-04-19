@@ -168,12 +168,6 @@ export const SettingsComponent: React.FC<{
                             state.display = field.value ? "visible" : "hidden";
                         })
                     })
-                    onFieldValueChange('system.map.enabled', (field) => {
-                        form.setFieldState('*(system.map.tileServer,system.map.tileUri)', (state) => {
-                            //For the initial linkage, if the field cannot be found, setFieldState will push the update into the update queue until the field appears before performing the operation
-                            state.display = field.value ? "visible" : "hidden";
-                        })
-                    })
                     onFieldValueChange('OM_USE_NTRIP', (field) => {
                         form.setFieldState('*(OM_NTRIP_PORT,OM_NTRIP_USER,OM_NTRIP_PASSWORD,OM_NTRIP_ENDPOINT)', (state) => {
                             //For the initial linkage, if the field cannot be found, setFieldState will push the update into the update queue until the field appears before performing the operation

@@ -6,7 +6,6 @@ import (
 )
 
 func ConfigRoute(r *gin.RouterGroup, db types.IDBProvider) {
-	ConfigEnvRoute(r, db)
 	ConfigGetKeysRoute(r, db)
 	ConfigSetKeysRoute(r, db)
 }
@@ -73,27 +72,3 @@ func ConfigSetKeysRoute(r *gin.RouterGroup, db types.IDBProvider) gin.IRoutes {
 	})
 }
 
-// ConfigEnvRoute get config from backend
-//
-// @Summary get config env from backend
-// @Description get config env from backend
-// @Tags config
-// @Produce  json
-// @Produce  json
-// @Success 200 {object} GetConfigResponse
-// @Failure 500 {object} ErrorResponse
-// @Router /config/envs [get]
-func ConfigEnvRoute(r *gin.RouterGroup, db types.IDBProvider) gin.IRoutes {
-	return r.GET("/config/envs", func(context *gin.Context) {
-		tileUri, err := db.Get("system.map.tileUri")
-		if err != nil {
-			context.JSON(500, ErrorResponse{
-				Error: err.Error(),
-			})
-			return
-		}
-		context.JSON(200, GetConfigResponse{
-			TileUri: string(tileUri),
-		})
-	})
-}

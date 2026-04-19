@@ -371,27 +371,6 @@ export const SettingsDesc: Record<string, Setting> = {
         section: "API",
         type: SettingValueType.String, defaultValue: "/app/web", description: "API web directory"
     },
-    "system.map.enabled": {
-        settingType: SettingType.Db,
-        section: "Map",
-        type: SettingValueType.Boolean,
-        defaultValue: false,
-        description: "Enable map tiles",
-    },
-    "system.map.tileServer": {
-        settingType: SettingType.Db,
-        section: "Map",
-        type: SettingValueType.String,
-        defaultValue: "",
-        description: "Tile server URL",
-    },
-    "system.map.tileUri": {
-        settingType: SettingType.Db,
-        section: "Map",
-        type: SettingValueType.String,
-        defaultValue: "/tiles/vt/lyrs=s,h&x={x}&y={y}&z={z}",
-        description: "Tile server URI",
-    },
     "system.mower.configFile": {
         settingType: SettingType.Db,
         section: "Mower",

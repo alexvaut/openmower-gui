@@ -40,13 +40,6 @@ func NewAPI(dbProvider types.IDBProvider, dockerProvider types.IDockerProvider, 
 	OpenMowerRoutes(apiGroup, rosProvider)
 	SensorLogRoutes(apiGroup, sensorLogProvider)
 	SetupRoutes(apiGroup, firmwareProvider, ubloxProvider)
-	tileServer, err := dbProvider.Get("system.map.enabled")
-	if err != nil {
-		log.Fatal(err)
-	}
-	if string(tileServer) == "true" {
-		TilesProxy(r, dbProvider)
-	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 	r.Run(string(httpAddr))
 }

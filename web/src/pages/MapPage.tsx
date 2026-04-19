@@ -17,7 +17,6 @@ import {useHighLevelStatus} from "../hooks/useHighLevelStatus.ts";
 import {IJoystickUpdateEvent} from "react-joystick-component/build/lib/Joystick";
 import {useSettings} from "../hooks/useSettings.ts";
 import {useConfig} from "../hooks/useConfig.tsx";
-import {useEnv} from "../hooks/useEnv.tsx";
 import {Spinner} from "../components/Spinner.tsx";
 import {useSharedSensorLog} from "../components/map/SensorLogContext";
 import {colorProfileExpr} from "../types/sensorlog.ts";
@@ -86,8 +85,6 @@ export const MapPage = () => {
         features: []
     })
     const {config} = useConfig(["gui.map.offset.x", "gui.map.offset.y"])
-    const envs = useEnv()
-    const [tileUri, setTileUri] = useState<string | undefined>()
     const [editMap, setEditMap] = useState<boolean>(false)
     const [features, setFeatures] = useState<Record<string, MowingFeature>>({});
     const [mapKey, setMapKey] = useState<string>("origin")
@@ -200,12 +197,6 @@ export const MapPage = () => {
         () => {
         });
     
-    useEffect(() => {
-        if (envs) {
-            setTileUri(envs.tileUri)
-        }
-    }, [envs]);
-
     useEffect(() => {
         let offX = parseFloat(config["gui.map.offset.x"] ?? 0);
         let offY = parseFloat(config["gui.map.offset.y"] ?? 0);
@@ -894,8 +885,6 @@ export const MapPage = () => {
                                                          style={{width: '100%', height: '100%'}}
                                                          mapStyle={"mapbox://styles/mapbox/satellite-streets-v12"}
                 >
-                    {tileUri ? <Source type={"raster"} id={"custom-raster"} tiles={[tileUri]} tileSize={256}/> : null}
-                    {tileUri ? <Layer type={"raster"} source={"custom-raster"} id={"custom-layer"}/> : null}
                     <Source type={"geojson"} id={"labels"} data={labelsCollection}/>
                     <Layer type={"symbol"} id={"mower"} source={"labels"} layout={{
                         "text-field": ['get', 'title'], //This will get "t" property from your geojson

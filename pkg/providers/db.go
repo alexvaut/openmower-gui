@@ -14,9 +14,6 @@ type DBProvider struct {
 var EnvFallbacks = map[string]string{
 	"system.api.addr":         "API_ADDR",
 	"system.api.webDirectory": "WEB_DIR",
-	"system.map.enabled":      "MAP_TILE_ENABLED",
-	"system.map.tileServer":   "MAP_TILE_SERVER",
-	"system.map.tileUri":      "MAP_TILE_URI",
 	"system.homekit.enabled":  "HOMEKIT_ENABLED",
 	"system.mqtt.enabled":     "MQTT_ENABLED",
 	"system.mqtt.prefix":      "MQTT_PREFIX",
@@ -30,9 +27,6 @@ var EnvFallbacks = map[string]string{
 var Defaults = map[string]string{
 	"system.api.addr":         ":4006",
 	"system.api.webDirectory": "/app/web",
-	"system.map.enabled":      "false",
-	"system.map.tileServer":   "http://localhost:5000",
-	"system.map.tileUri":      "/tiles/vt/lyrs=s,h&x={x}&y={y}&z={z}",
 	"system.homekit.enabled":  "false",
 	"system.homekit.pincode":  "00102003",
 	"system.mqtt.enabled":     "false",

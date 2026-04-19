@@ -26,11 +26,6 @@ definitions:
       error:
         type: string
     type: object
-  api.GetConfigResponse:
-    properties:
-      tileUri:
-        type: string
-    type: object
   api.GetSettingsResponse:
     properties:
       settings:
@@ -43,87 +38,9 @@ definitions:
       ok:
         type: string
     type: object
-  geometry_msgs.Point:
-    properties:
-      msg.Package:
-        type: integer
-      x:
-        type: number
-      "y":
-        type: number
-      z:
-        type: number
-    type: object
-  geometry_msgs.Point32:
-    properties:
-      msg.Package:
-        type: integer
-      x:
-        type: number
-      "y":
-        type: number
-      z:
-        type: number
-    type: object
-  geometry_msgs.Polygon:
-    properties:
-      msg.Package:
-        type: integer
-      points:
-        items:
-          $ref: '#/definitions/geometry_msgs.Point32'
-        type: array
-    type: object
-  geometry_msgs.Pose:
-    properties:
-      msg.Package:
-        type: integer
-      orientation:
-        $ref: '#/definitions/geometry_msgs.Quaternion'
-      position:
-        $ref: '#/definitions/geometry_msgs.Point'
-    type: object
-  geometry_msgs.Quaternion:
-    properties:
-      msg.Package:
-        type: integer
-      w:
-        type: number
-      x:
-        type: number
-      "y":
-        type: number
-      z:
-        type: number
-    type: object
   mower_map.AddMowingAreaSrvReq:
-    properties:
-      area:
-        $ref: '#/definitions/mower_map.MapArea'
-      isNavigationArea:
-        type: boolean
-      msg.Package:
-        type: integer
-    type: object
-  mower_map.MapArea:
-    properties:
-      area:
-        $ref: '#/definitions/geometry_msgs.Polygon'
-      msg.Package:
-        type: integer
-      name:
-        type: string
-      obstacles:
-        items:
-          $ref: '#/definitions/geometry_msgs.Polygon'
-        type: array
     type: object
   mower_map.SetDockingPointSrvReq:
-    properties:
-      dockingPose:
-        $ref: '#/definitions/geometry_msgs.Pose'
-      msg.Package:
-        type: integer
     type: object
   types.FirmwareConfig:
     properties:
@@ -159,6 +76,8 @@ definitions:
         type: integer
       panelType:
         type: string
+      perimeterWire:
+        type: boolean
       playButtonClearEmergencyMillis:
         type: integer
       repository:
@@ -177,24 +96,6 @@ definitions:
 info:
   contact: {}
 paths:
-  /config/envs:
-    get:
-      description: get config env from backend
-      produces:
-      - application/json
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.GetConfigResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.ErrorResponse'
-      summary: get config env from backend
-      tags:
-      - config
   /config/keys/get:
     post:
       description: get config from backend
@@ -451,7 +352,7 @@ paths:
       description: subscribe to a topic
       parameters:
       - description: 'topic to subscribe to, could be: diagnostics, status, gps, imu,
-          ticks, highLevelStatus'
+          ticks, highLevelStatus, mowerLogicParams, wifi'
         in: path
         name: topic
         required: true
