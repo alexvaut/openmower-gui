@@ -3,7 +3,8 @@ export type SensorType =
     | 'left_rpm' | 'left_current' | 'left_temp_motor'
     | 'right_rpm' | 'right_current' | 'right_temp_motor'
     | 'v_battery' | 'gps_accuracy' | 'speed'
-    | 'wifi_percent' | 'wifi_dbm';
+    | 'wifi_percent' | 'wifi_dbm'
+    | 'load_ratio';
 
 export interface SensorSample {
     t: number;  // unix timestamp
@@ -138,4 +139,5 @@ export const SensorTypeLabels: Record<SensorType, string> = {
     speed: 'Speed',
     wifi_percent: 'WiFi %',
     wifi_dbm: 'WiFi dBm',
+    load_ratio: 'Load Ratio',
 };
