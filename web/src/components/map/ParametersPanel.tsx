@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState, useCallback} from 'react';
-import {DownOutlined, UpOutlined, ReloadOutlined, ArrowLeftOutlined, ArrowRightOutlined} from '@ant-design/icons';
+import {DownOutlined, UpOutlined, ReloadOutlined, ArrowLeftOutlined, ArrowRightOutlined, DownloadOutlined} from '@ant-design/icons';
 import {useNavigate, useSearchParams} from 'react-router-dom';
 import {GraphChart} from '../common/GraphChart';
 import {
@@ -143,6 +143,73 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
         setSelected(prev => (prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]));
     };
 
+    const exportCsv = useCallback(() => {
+        const {from, to} = sensorLog.resolveRange();
+        const cols = selected.filter(k => {
+            const s = seriesBySensor.get(k);
+            return s && s !== 'loading' && s !== 'error';
+        });
+        if (cols.length === 0) return;
+
+        // Union of timestamps across selected sensors, clipped to the visible
+        // window. Each sensor's samples go into a map keyed by timestamp so we
+        // can emit a wide row per unique t.
+        const valueByCol: Map<SensorType, Map<number, number>> = new Map();
+        const tSet = new Set<number>();
+        for (const k of cols) {
+            const s = seriesBySensor.get(k) as SeriesState;
+            const m = new Map<number, number>();
+            for (let i = 0; i < s.xs.length; i++) {
+                const t = s.xs[i];
+                if (t < from || t > to) continue;
+                m.set(t, s.ys[i]);
+                tSet.add(t);
+            }
+            valueByCol.set(k, m);
+        }
+        const times = Array.from(tSet).sort((a, b) => a - b);
+        if (times.length === 0) return;
+
+        const pad2 = (n: number) => n.toString().padStart(2, '0');
+        const iso = (ts: number) => {
+            const d = new Date(ts * 1000);
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+        };
+        const stamp = (ts: number) => {
+            const d = new Date(ts * 1000);
+            return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+        };
+
+        const header = ['time_unix', 'time_iso', ...cols.map(k => {
+            const def = DEF_BY_KEY.get(k)!;
+            return def.unit ? `${k} (${def.unit})` : k;
+        })];
+        const lines: string[] = [header.join(',')];
+        for (const t of times) {
+            const row: string[] = [String(t), iso(t)];
+            for (const k of cols) {
+                const v = valueByCol.get(k)!.get(t);
+                row.push(v === undefined ? '' : String(v));
+            }
+            lines.push(row.join(','));
+        }
+
+        const blob = new Blob([lines.join('\n')], {type: 'text/csv;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sensorlog_${stamp(from)}_${stamp(to)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, [selected, seriesBySensor, sensorLog]);
+
+    const canExport = selected.some(k => {
+        const s = seriesBySensor.get(k);
+        return s && s !== 'loading' && s !== 'error' && s.count > 0;
+    });
+
     const handleXRangeChange = useCallback((from: number, to: number, full: boolean) => {
         if (full) {
             // Double-click reset: if we're currently on a graph range, drop
@@ -261,6 +328,21 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
                             title="Forward"
                         >
                             <ArrowRightOutlined/> fwd
+                        </div>
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            aria-disabled={!canExport}
+                            onClick={() => { if (canExport) exportCsv(); }}
+                            onKeyDown={e => { if (canExport && (e.key === 'Enter' || e.key === ' ')) exportCsv(); }}
+                            className={`flex items-center gap-1 select-none ${
+                                canExport
+                                    ? 'cursor-pointer text-slate-400 hover:text-slate-100'
+                                    : 'cursor-not-allowed text-slate-600'
+                            }`}
+                            title={canExport ? 'Export visible window as CSV' : 'No data to export'}
+                        >
+                            <DownloadOutlined/> export
                         </div>
                         <div
                             role="button"
