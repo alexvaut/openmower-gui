@@ -48,13 +48,22 @@ export default function MapEditorPage() {
     const [currentSpeed, setCurrentSpeed] = useState(0);
 
     const joyStream = useWS<string>(() => {}, () => {}, () => {});
+    // react-joystick-component only fires `move` when the stick position changes,
+    // so holding the stick steady produces no messages. The drive watchdog then
+    // cuts the motors and the next tiny tremor restarts them — causing saccade.
+    // Keep a live copy of the desired Twist and resend it at a fixed rate while
+    // drive mode is active.
+    const twistRef = useRef<Twist>({Linear: {X: 0, Y: 0, Z: 0}, Angular: {X: 0, Y: 0, Z: 0}});
 
     useEffect(() => {
         if (driveMode && mode === 'live') {
             joyStream.start('/api/openmower/publish/override');
-        } else {
-            joyStream.stop();
+            const id = window.setInterval(() => {
+                joyStream.sendJsonMessage(twistRef.current);
+            }, 50);
+            return () => window.clearInterval(id);
         }
+        joyStream.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [driveMode, mode]);
 
@@ -63,16 +72,15 @@ export default function MapEditorPage() {
     const handleJoyMove = (event: IJoystickUpdateEvent) => {
         const y = event.y ?? 0;
         const x = event.x ?? 0;
-        const msg: Twist = {
+        twistRef.current = {
             Linear: {X: y * MAX_DRIVE_SPEED, Y: 0, Z: 0},
             Angular: {Z: -x * MAX_DRIVE_ANGULAR, X: 0, Y: 0},
         };
-        joyStream.sendJsonMessage(msg);
         setCurrentSpeed(Math.abs(y * MAX_DRIVE_SPEED));
     };
 
     const handleJoyStop = () => {
-        joyStream.sendJsonMessage({Linear: {X: 0, Y: 0, Z: 0}, Angular: {Z: 0, X: 0, Y: 0}});
+        twistRef.current = {Linear: {X: 0, Y: 0, Z: 0}, Angular: {X: 0, Y: 0, Z: 0}};
         setCurrentSpeed(0);
     };
 
