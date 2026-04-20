@@ -32,6 +32,7 @@ func OpenMowerRoutes(r *gin.RouterGroup, provider types.IRosProvider) {
 	ClearMapRoute(group, provider)
 	ReplaceMapRoute(group, provider)
 	SubscriberRoute(group, provider)
+	OverridePublisherRoute(group, provider)
 	PublisherRoute(group, provider)
 }
 
@@ -208,6 +209,43 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 		if err != nil {
 			c.Error(err)
 			return
+		}
+	})
+}
+
+// OverridePublisherRoute publishes Twist messages to /override_vel (twist_mux priority 100).
+// Works in any mower state — intended for manual rescue/teleop override.
+//
+// @Summary publish override velocity
+// @Description publish Twist messages to /override_vel, overriding autonomous navigation
+// @Tags openmower
+// @Router /openmower/publish/override [get]
+func OverridePublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
+	group.GET("/publish/override", func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		publisher, err := provider.Publisher("/override_vel", &geometry_msgs.Twist{})
+		if err != nil {
+			c.Error(err)
+			return
+		}
+		defer publisher.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				c.Error(err)
+				break
+			}
+			var msgObj geometry_msgs.Twist
+			err = json.Unmarshal(msg, &msgObj)
+			if err != nil {
+				c.Error(err)
+				break
+			}
+			publisher.Write(&msgObj)
 		}
 	})
 }
