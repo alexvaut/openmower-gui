@@ -19,7 +19,11 @@ import {LiveControlsPanel} from '../components/map/LiveControlsPanel';
 import {PageChrome} from '../components/PageChrome';
 
 const MOBILE_MQ = '(max-width: 1023px)';
-const MAX_DRIVE_SPEED = 1.0; // m/s — joystick sends raw full-scale commands on /override_vel
+const MAX_DRIVE_SPEED = 1.0; // m/s — full-stick forward/back
+// Higher than linear so in-place rotation clears the diff-drive wheel deadband:
+// with wheel_base ~0.3m, angular=1 rad/s is only ±0.15 m/s per wheel, below the
+// ESC's start-up threshold, so the robot won't spin without any linear command.
+const MAX_DRIVE_ANGULAR = 2.5; // rad/s — full-stick left/right
 
 function useIsMobile() {
     const [isMobile, setIsMobile] = useState(() =>
@@ -61,7 +65,7 @@ export default function MapEditorPage() {
         const x = event.x ?? 0;
         const msg: Twist = {
             Linear: {X: y * MAX_DRIVE_SPEED, Y: 0, Z: 0},
-            Angular: {Z: -x * MAX_DRIVE_SPEED, X: 0, Y: 0},
+            Angular: {Z: -x * MAX_DRIVE_ANGULAR, X: 0, Y: 0},
         };
         joyStream.sendJsonMessage(msg);
         setCurrentSpeed(Math.abs(y * MAX_DRIVE_SPEED));
