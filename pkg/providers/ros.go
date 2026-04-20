@@ -447,7 +447,7 @@ func (p *RosProvider) Publisher(topic string, obj interface{}) (*goroslib.Publis
 		Topic: topic,
 		Msg:   obj,
 	})
-	return publisher, nil
+	return publisher, err
 }
 
 func (p *RosProvider) UnSubscribe(topic string, id string) {

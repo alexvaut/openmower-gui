@@ -229,7 +229,9 @@ func OverridePublisherRoute(group *gin.RouterGroup, provider types.IRosProvider)
 		defer conn.Close()
 		publisher, err := provider.Publisher("/override_vel", &geometry_msgs.Twist{})
 		if err != nil {
+			log.Printf("override_vel publisher create failed: %v", err)
 			c.Error(err)
+			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			return
 		}
 		defer publisher.Close()
