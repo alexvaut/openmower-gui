@@ -45,6 +45,10 @@ const DEF_BY_KEY = new Map(SENSOR_DEFS.map(s => [s.key, s]));
 type SeriesState = {
     xs: number[]; // epoch seconds
     ys: number[];
+    // Robot position (meters from datum) at each sample; parallel to xs/ys.
+    // Only used by the CSV export today, but cheap enough to always keep.
+    px: number[];
+    py: number[];
     count: number;
 };
 
@@ -118,10 +122,15 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
                 const rows = data.samples ?? [];
                 const xs = new Array<number>(rows.length);
                 const ys = new Array<number>(rows.length);
-                for (let i = 0; i < rows.length; i++) { xs[i] = rows[i].t; ys[i] = rows[i].v; }
+                const px = new Array<number>(rows.length);
+                const py = new Array<number>(rows.length);
+                for (let i = 0; i < rows.length; i++) {
+                    xs[i] = rows[i].t; ys[i] = rows[i].v;
+                    px[i] = rows[i].x; py[i] = rows[i].y;
+                }
                 setSeriesBySensor(prev => {
                     const next = new Map(prev);
-                    next.set(k, {xs, ys, count: data.count});
+                    next.set(k, {xs, ys, px, py, count: data.count});
                     return next;
                 });
             } catch (err: any) {
@@ -153,8 +162,11 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
 
         // Union of timestamps across selected sensors, clipped to the visible
         // window. Each sensor's samples go into a map keyed by timestamp so we
-        // can emit a wide row per unique t.
+        // can emit a wide row per unique t. Position (x,y) is logged alongside
+        // every sample — keep the first sensor's for each t as the row's pose
+        // (all sensors share the same robot at a given instant).
         const valueByCol: Map<SensorType, Map<number, number>> = new Map();
+        const poseByT = new Map<number, {x: number; y: number}>();
         const tSet = new Set<number>();
         for (const k of cols) {
             const s = seriesBySensor.get(k) as SeriesState;
@@ -164,6 +176,7 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
                 if (t < from || t > to) continue;
                 m.set(t, s.ys[i]);
                 tSet.add(t);
+                if (!poseByT.has(t)) poseByT.set(t, {x: s.px[i], y: s.py[i]});
             }
             valueByCol.set(k, m);
         }
@@ -180,13 +193,18 @@ export const ParametersPanel = ({initiallyOpen = true}: {initiallyOpen?: boolean
             return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
         };
 
-        const header = ['time_unix', 'time_iso', ...cols.map(k => {
+        const header = ['time_unix', 'time_iso', 'x (m)', 'y (m)', ...cols.map(k => {
             const def = DEF_BY_KEY.get(k)!;
             return def.unit ? `${k} (${def.unit})` : k;
         })];
         const lines: string[] = [header.join(',')];
         for (const t of times) {
-            const row: string[] = [String(t), iso(t)];
+            const pose = poseByT.get(t);
+            const row: string[] = [
+                String(t), iso(t),
+                pose ? String(pose.x) : '',
+                pose ? String(pose.y) : '',
+            ];
             for (const k of cols) {
                 const v = valueByCol.get(k)!.get(t);
                 row.push(v === undefined ? '' : String(v));
