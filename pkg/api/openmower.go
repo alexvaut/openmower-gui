@@ -234,7 +234,7 @@ func OverridePublisherRoute(group *gin.RouterGroup, provider types.IRosProvider)
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			return
 		}
-		defer publisher.Close()
+		// publisher is cached by the provider — do not Close on request end.
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
@@ -274,7 +274,7 @@ func PublisherRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			c.Error(err)
 			return
 		}
-		defer publisher.Close()
+		// publisher is cached by the provider — do not Close on request end.
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {

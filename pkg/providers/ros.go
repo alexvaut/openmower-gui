@@ -99,6 +99,7 @@ type RosProvider struct {
 	loadRatioSubscriber       *goroslib.Subscriber
 	wifiStatus                wifiStatus
 	subscribers               map[string]map[string]*RosSubscriber
+	publishers                map[string]*goroslib.Publisher
 	lastMessage               map[string][]byte
 	lastMessageAt             map[string]time.Time
 	nodeCreatedAt             time.Time
@@ -437,17 +438,35 @@ func (p *RosProvider) Subscribe(topic string, id string, cb func(msg []byte)) er
 	return nil
 }
 
+// Publisher returns a cached publisher for the given topic, creating it on
+// first use. goroslib refuses a second NewPublisher for a topic already
+// registered on the node — and Close leaves registration behind long enough
+// that per-request create/close cycles error out with "Topic already
+// published". Caching gives the publisher a lifetime tied to the provider
+// instead of the HTTP request, and lets concurrent WS sessions share it.
 func (p *RosProvider) Publisher(topic string, obj interface{}) (*goroslib.Publisher, error) {
 	rosNode, err := p.getNode()
 	if err != nil {
 		return nil, err
+	}
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if p.publishers == nil {
+		p.publishers = make(map[string]*goroslib.Publisher)
+	}
+	if pub, ok := p.publishers[topic]; ok {
+		return pub, nil
 	}
 	publisher, err := goroslib.NewPublisher(goroslib.PublisherConf{
 		Node:  rosNode,
 		Topic: topic,
 		Msg:   obj,
 	})
-	return publisher, err
+	if err != nil {
+		return nil, err
+	}
+	p.publishers[topic] = publisher
+	return publisher, nil
 }
 
 func (p *RosProvider) UnSubscribe(topic string, id string) {
