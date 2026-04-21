@@ -97,6 +97,7 @@ type RosProvider struct {
 	wifiDbmSubscriber         *goroslib.Subscriber
 	wifiPercentSubscriber     *goroslib.Subscriber
 	loadRatioSubscriber       *goroslib.Subscriber
+	rpmSagRatioSubscriber     *goroslib.Subscriber
 	wifiStatus                wifiStatus
 	subscribers               map[string]map[string]*RosSubscriber
 	publishers                map[string]*goroslib.Publisher
@@ -290,6 +291,9 @@ func (p *RosProvider) resetSubscribers() {
 	if p.loadRatioSubscriber != nil {
 		p.loadRatioSubscriber.Close()
 	}
+	if p.rpmSagRatioSubscriber != nil {
+		p.rpmSagRatioSubscriber.Close()
+	}
 	p.node = nil
 	p.nodeCreatedAt = time.Time{}
 	p.currentPathSubscriber = nil
@@ -309,6 +313,7 @@ func (p *RosProvider) resetSubscribers() {
 	p.wifiDbmSubscriber = nil
 	p.wifiPercentSubscriber = nil
 	p.loadRatioSubscriber = nil
+	p.rpmSagRatioSubscriber = nil
 	p.wifiStatus = wifiStatus{}
 	p.mowingPaths = []*nav_msgs.Path{}
 	p.mowingPath = nil
@@ -724,6 +729,16 @@ func (p *RosProvider) initSubscribers() error {
 	if p.loadRatioSubscriber == nil {
 		rawTopic := "/blade_speed_adapter/load_ratio"
 		p.loadRatioSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:      node,
+			Topic:     rawTopic,
+			Callback:  cbHandler[*std_msgs.Float32](p, rawTopic),
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to " + rawTopic)
+	}
+	if p.rpmSagRatioSubscriber == nil {
+		rawTopic := "/blade_speed_adapter/rpm_sag_ratio"
+		p.rpmSagRatioSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:      node,
 			Topic:     rawTopic,
 			Callback:  cbHandler[*std_msgs.Float32](p, rawTopic),

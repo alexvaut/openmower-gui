@@ -62,7 +62,8 @@ var sensorColumnWhitelist = map[string]string{
 	"wifi_percent": "wifi_percent",
 	"wifi_dbm":     "wifi_dbm",
 	// Blade-speed adapter
-	"load_ratio": "load_ratio",
+	"load_ratio":    "load_ratio",
+	"rpm_sag_ratio": "rpm_sag_ratio",
 }
 
 // SensorLogProvider collects sensor data while mowing and stores it in SQLite.
@@ -108,8 +109,9 @@ type SensorLogProvider struct {
 	lastWifiDbm     float64
 	lastWifiPercent float64
 
-	// Blade-speed adapter (from /blade_speed_adapter/load_ratio)
-	lastLoadRatio float64
+	// Blade-speed adapter (from /blade_speed_adapter/load_ratio and /rpm_sag_ratio)
+	lastLoadRatio   float64
+	lastRpmSagRatio float64
 
 	retentionDays int
 	stopCh        chan struct{}
@@ -179,7 +181,8 @@ CREATE TABLE IF NOT EXISTS sensor_samples (
 	speed           REAL NOT NULL DEFAULT 0,
 	wifi_percent    REAL NOT NULL DEFAULT 0,
 	wifi_dbm        REAL NOT NULL DEFAULT 0,
-	load_ratio      REAL NOT NULL DEFAULT 0
+	load_ratio      REAL NOT NULL DEFAULT 0,
+	rpm_sag_ratio   REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sensor_ts ON sensor_samples(timestamp);
 `
@@ -198,6 +201,7 @@ var migrateColumns = []string{
 	"wifi_percent REAL NOT NULL DEFAULT 0",
 	"wifi_dbm REAL NOT NULL DEFAULT 0",
 	"load_ratio REAL NOT NULL DEFAULT 0",
+	"rpm_sag_ratio REAL NOT NULL DEFAULT 0",
 }
 
 func NewSensorLogProvider(rosProvider types.IRosProvider, dbPath string) *SensorLogProvider {
@@ -252,6 +256,7 @@ func (s *SensorLogProvider) subscribeToRos(rosProvider types.IRosProvider) {
 	go s.subscribeWithRetry(rosProvider, "/xbot_monitoring/sensors/om_wifi_signal_dbm/data", "sensorlog-wifi-dbm", s.onWifiDbm)
 	go s.subscribeWithRetry(rosProvider, "/xbot_monitoring/sensors/om_wifi_signal_percent/data", "sensorlog-wifi-pct", s.onWifiPercent)
 	go s.subscribeWithRetry(rosProvider, "/blade_speed_adapter/load_ratio", "sensorlog-load-ratio", s.onLoadRatio)
+	go s.subscribeWithRetry(rosProvider, "/blade_speed_adapter/rpm_sag_ratio", "sensorlog-rpm-sag-ratio", s.onRpmSagRatio)
 }
 
 // subscribeWithRetry keeps attempting rosProvider.Subscribe until it succeeds
@@ -348,6 +353,16 @@ func (s *SensorLogProvider) onLoadRatio(msg []byte) {
 	s.mu.Unlock()
 }
 
+func (s *SensorLogProvider) onRpmSagRatio(msg []byte) {
+	var v wifiDoubleSubset
+	if err := json.Unmarshal(msg, &v); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastRpmSagRatio = v.Data
+	s.mu.Unlock()
+}
+
 func (s *SensorLogProvider) onPose(msg []byte) {
 	var pose absolutePoseSubset
 	if err := json.Unmarshal(msg, &pose); err != nil {
@@ -386,8 +401,8 @@ func (s *SensorLogProvider) sampleLoop() {
 		 right_rpm, right_current, right_temp_motor,
 		 v_battery, gps_accuracy, speed,
 		 wifi_percent, wifi_dbm,
-		 load_ratio)
-		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?,  ?)`
+		 load_ratio, rpm_sag_ratio)
+		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?)`
 
 	stmt, err := s.db.Prepare(insertSQL)
 	if err != nil {
@@ -410,7 +425,7 @@ func (s *SensorLogProvider) sampleLoop() {
 					s.lastRightRpm, s.lastRightCurrent, s.lastRightTempMot,
 					s.lastVBattery, float64(s.lastGpsAccuracy)*100.0, s.lastSpeed,
 					s.lastWifiPercent, s.lastWifiDbm,
-					s.lastLoadRatio,
+					s.lastLoadRatio, s.lastRpmSagRatio,
 				)
 				if err != nil {
 					logrus.Errorf("sensorlog: insert failed: %v", err)
@@ -530,8 +545,8 @@ func (s *SensorLogProvider) SeedMockData(count int) error {
 		 right_rpm, right_current, right_temp_motor,
 		 v_battery, gps_accuracy, speed,
 		 wifi_percent, wifi_dbm,
-		 load_ratio)
-		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?,  ?)`
+		 load_ratio, rpm_sag_ratio)
+		VALUES (?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?,  ?, ?)`
 
 	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
@@ -621,6 +636,8 @@ func (s *SensorLogProvider) SeedMockData(count int) error {
 		if x > 4.0 && x < 6.0 {
 			loadRatio = math.Min(1.0, rand.Float64()*0.8)
 		}
+		// RPM sag ratio: tracks load ratio with some noise
+		rpmSagRatio := loadRatio*0.7 + rand.Float64()*0.1
 
 		if _, err := stmt.Exec(
 			ts, x, y,
@@ -629,7 +646,7 @@ func (s *SensorLogProvider) SeedMockData(count int) error {
 			rightRpm, rightCurrent, rightTempMot,
 			vBattery, gpsAccuracy, speed,
 			wifiPct, wifiDbm,
-			loadRatio,
+			loadRatio, rpmSagRatio,
 		); err != nil {
 			return err
 		}

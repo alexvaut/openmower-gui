@@ -39,6 +39,7 @@ const SENSOR_DEFS: SensorDef[] = [
     {key: 'wifi_percent', unit: '%', stroke: '#60a5fa'},
     {key: 'wifi_dbm', unit: 'dBm', stroke: '#3b82f6'},
     {key: 'load_ratio', unit: '', stroke: '#f472b6'},
+    {key: 'rpm_sag_ratio', unit: '', stroke: '#d946ef'},
 ];
 const DEF_BY_KEY = new Map(SENSOR_DEFS.map(s => [s.key, s]));
 
