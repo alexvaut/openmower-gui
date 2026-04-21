@@ -118,7 +118,7 @@ func (hc *MqttProvider) subscribeToMqtt() {
 	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/high_level_control", &mower_msgs.HighLevelControlSrv{}, &mower_msgs.HighLevelControlSrvReq{}, &mower_msgs.HighLevelControlSrvRes{})
 	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/emergency", &mower_msgs.EmergencyStopSrv{}, &mower_msgs.EmergencyStopSrvReq{}, &mower_msgs.EmergencyStopSrvRes{})
 	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_logic/set_parameters", &dynamic_reconfigure.Reconfigure{}, &dynamic_reconfigure.ReconfigureReq{}, &dynamic_reconfigure.ReconfigureRes{})
-	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/mow_enabled", &mower_msgs.MowerControlSrv{}, &mower_msgs.MowerControlSrvReq{}, &mower_msgs.MowerControlSrvRes{})
+	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/ll/_service/mow_enabled", &mower_msgs.MowerControlSrv{}, &mower_msgs.MowerControlSrvReq{}, &mower_msgs.MowerControlSrvRes{})
 	subscribeToMqttCall(hc.server, hc.rosProvider, hc.prefix, "/mower_service/start_in_area", &mower_msgs.StartInAreaSrv{}, &mower_msgs.StartInAreaSrvReq{}, &mower_msgs.StartInAreaSrvRes{})
 }
 
