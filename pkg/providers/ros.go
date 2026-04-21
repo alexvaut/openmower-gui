@@ -680,11 +680,11 @@ func (p *RosProvider) initSubscribers() error {
 	if p.stallBreakerParamsSubscriber == nil {
 		p.stallBreakerParamsSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
 			Node:      node,
-			Topic:     "/mower_comms_v1/stall_breaker/parameter_updates",
-			Callback:  cbHandler[*dynamic_reconfigure.Config](p, "/mower_comms_v1/stall_breaker/parameter_updates"),
+			Topic:     "/ll/stall_breaker/parameter_updates",
+			Callback:  cbHandler[*dynamic_reconfigure.Config](p, "/ll/stall_breaker/parameter_updates"),
 			QueueSize: 1,
 		})
-		logrus.Info("Subscribed to /mower_comms_v1/stall_breaker/parameter_updates")
+		logrus.Info("Subscribed to /ll/stall_breaker/parameter_updates")
 	}
 	if p.wifiIfaceSubscriber == nil {
 		rawTopic := "/xbot_monitoring/sensors/om_wifi_iface/data"
