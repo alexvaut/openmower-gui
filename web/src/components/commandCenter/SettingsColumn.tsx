@@ -1,5 +1,7 @@
 import {Switch} from 'antd';
 import {useState} from 'react';
+import {useMowerAction} from '../../hooks/useMowerAction.ts';
+import {useStallBreakerParams} from '../../hooks/useStallBreakerParams.ts';
 
 // MOCKUP — state is local only. Wire to dynamic_reconfigure:
 //   /blade_speed_adapter/set_parameters { enable: bool }
@@ -27,6 +29,12 @@ const SettingRow = ({
 
 export const SettingsColumn = () => {
     const [bladeAdapter, setBladeAdapter] = useState(true);
+    const mowerAction = useMowerAction();
+    const stallBreakerParams = useStallBreakerParams();
+    const stallBreakerEnabled = !!stallBreakerParams.enabled;
+    const setStallBreakerEnabled = (v: boolean) => mowerAction("stall_breaker", {
+        Config: {Bools: [{Name: "enabled", Value: v}]},
+    })();
     return (
         <>
             <SettingRow
@@ -34,6 +42,12 @@ export const SettingsColumn = () => {
                 help="Modulate linear speed under mow load."
                 checked={bladeAdapter}
                 onChange={setBladeAdapter}
+            />
+            <SettingRow
+                label="Stall Breaker"
+                help="Pulse drive motors on stall to free the mower."
+                checked={stallBreakerEnabled}
+                onChange={setStallBreakerEnabled}
             />
         </>
     );

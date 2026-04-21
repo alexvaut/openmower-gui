@@ -178,6 +178,8 @@ func SubscriberRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			def, err = subscribe(provider, c, conn, "/mower_logic/current_state", -1)
 		case "mowerLogicParams":
 			def, err = subscribe(provider, c, conn, "/mower_logic/parameter_updates", -1)
+		case "stallBreakerParams":
+			def, err = subscribe(provider, c, conn, "/mower_comms_v1/stall_breaker/parameter_updates", -1)
 		case "gps":
 			def, err = subscribe(provider, c, conn, "/xbot_driver_gps/xb_pose", 100)
 		case "pose":
@@ -364,6 +366,13 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 				return
 			}
 			err = provider.CallService(c.Request.Context(), "/mower_logic/set_parameters", &dynamic_reconfigure.Reconfigure{}, &CallReq, &dynamic_reconfigure.ReconfigureRes{})
+		case "stall_breaker":
+			var CallReq dynamic_reconfigure.ReconfigureReq
+			err = c.BindJSON(&CallReq)
+			if err != nil {
+				return
+			}
+			err = provider.CallService(c.Request.Context(), "/mower_comms_v1/stall_breaker/set_parameters", &dynamic_reconfigure.Reconfigure{}, &CallReq, &dynamic_reconfigure.ReconfigureRes{})
 		case "mow_enabled":
 			var CallReq mower_msgs.MowerControlSrvReq
 			err = c.BindJSON(&CallReq)

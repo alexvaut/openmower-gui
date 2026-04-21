@@ -93,6 +93,7 @@ type RosProvider struct {
 	currentPathSubscriber     *goroslib.Subscriber
 	poseSubscriber            *goroslib.Subscriber
 	mowerLogicParamsSubscriber *goroslib.Subscriber
+	stallBreakerParamsSubscriber *goroslib.Subscriber
 	wifiIfaceSubscriber       *goroslib.Subscriber
 	wifiDbmSubscriber         *goroslib.Subscriber
 	wifiPercentSubscriber     *goroslib.Subscriber
@@ -279,6 +280,9 @@ func (p *RosProvider) resetSubscribers() {
 	if p.mowerLogicParamsSubscriber != nil {
 		p.mowerLogicParamsSubscriber.Close()
 	}
+	if p.stallBreakerParamsSubscriber != nil {
+		p.stallBreakerParamsSubscriber.Close()
+	}
 	if p.wifiIfaceSubscriber != nil {
 		p.wifiIfaceSubscriber.Close()
 	}
@@ -309,6 +313,7 @@ func (p *RosProvider) resetSubscribers() {
 	p.ticksSubscriber = nil
 	p.poseSubscriber = nil
 	p.mowerLogicParamsSubscriber = nil
+	p.stallBreakerParamsSubscriber = nil
 	p.wifiIfaceSubscriber = nil
 	p.wifiDbmSubscriber = nil
 	p.wifiPercentSubscriber = nil
@@ -671,6 +676,15 @@ func (p *RosProvider) initSubscribers() error {
 			QueueSize: 1,
 		})
 		logrus.Info("Subscribed to /mower_logic/parameter_updates")
+	}
+	if p.stallBreakerParamsSubscriber == nil {
+		p.stallBreakerParamsSubscriber, err = goroslib.NewSubscriber(goroslib.SubscriberConf{
+			Node:      node,
+			Topic:     "/mower_comms_v1/stall_breaker/parameter_updates",
+			Callback:  cbHandler[*dynamic_reconfigure.Config](p, "/mower_comms_v1/stall_breaker/parameter_updates"),
+			QueueSize: 1,
+		})
+		logrus.Info("Subscribed to /mower_comms_v1/stall_breaker/parameter_updates")
 	}
 	if p.wifiIfaceSubscriber == nil {
 		rawTopic := "/xbot_monitoring/sensors/om_wifi_iface/data"
