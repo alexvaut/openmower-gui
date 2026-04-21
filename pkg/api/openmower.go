@@ -12,6 +12,7 @@ import (
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/dynamic_reconfigure"
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_map"
 	"github.com/cedbossneo/openmower-gui/pkg/msgs/mower_msgs"
+	"github.com/cedbossneo/openmower-gui/pkg/msgs/std_msgs"
 	"github.com/cedbossneo/openmower-gui/pkg/types"
 	"github.com/docker/distribution/uuid"
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,7 @@ func OpenMowerRoutes(r *gin.RouterGroup, provider types.IRosProvider) {
 	SubscriberRoute(group, provider)
 	OverridePublisherRoute(group, provider)
 	PublisherRoute(group, provider)
+	ActionRoute(group, provider)
 }
 
 // AddMapAreaRoute add a map area
@@ -395,5 +397,41 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 		} else {
 			c.JSON(200, OkResponse{})
 		}
+	})
+}
+
+// ActionRoute publishes a std_msgs/String to /xbot/action. Used for behavior-level
+// commands that aren't exposed as ROS services (skip_points, skip_path, skip_area…).
+//
+// @Summary publish an action
+// @Description publish an action string (e.g. mower_logic:mowing/skip_points/10) to /xbot/action
+// @Tags openmower
+// @Accept  json
+// @Produce  json
+// @Param CallReq body map[string]interface{} true "request body with {action: string}"
+// @Success 200 {object} OkResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /openmower/action [post]
+func ActionRoute(group *gin.RouterGroup, provider types.IRosProvider) {
+	group.POST("/action", func(c *gin.Context) {
+		var body struct {
+			Action string `json:"action"`
+		}
+		if err := c.BindJSON(&body); err != nil {
+			return
+		}
+		if body.Action == "" {
+			c.JSON(400, ErrorResponse{Error: "action is required"})
+			return
+		}
+		publisher, err := provider.Publisher("/xbot/action", &std_msgs.String{})
+		if err != nil {
+			log.Printf("action publisher create failed: %v", err)
+			c.JSON(500, ErrorResponse{Error: err.Error()})
+			return
+		}
+		publisher.Write(&std_msgs.String{Data: body.Action})
+		log.Printf("published /xbot/action: %s", body.Action)
+		c.JSON(200, OkResponse{})
 	})
 }

@@ -160,6 +160,15 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 		logrus.Error(err)
 		return r
 	}
+	// Pre-warm the action publisher so the first user action (Skip Points,
+	// Skip Path, Skip Area) isn't lost to the goroslib subscriber-handshake
+	// race. Without this, the first Write after NewPublisher fires before
+	// mower_logic has completed its TCP connect, and the message is dropped.
+	if _, err = r.Publisher("/xbot/action", &std_msgs.String{}); err != nil {
+		logrus.Warnf("failed to pre-warm /xbot/action publisher: %v", err)
+	} else {
+		logrus.Info("Pre-warmed /xbot/action publisher")
+	}
 	go r.watchdogLoop()
 	return r
 }
@@ -225,7 +234,9 @@ func (r *RosProvider) watchdogLoop() {
 			}
 			logrus.Warnf("ros watchdog: resetting subscribers: %s", reason)
 			r.resetSubscribers()
-			continue
+			// Fall through to re-init immediately instead of waiting 20s for
+			// the next tick — otherwise user actions in that window race the
+			// publisher handshake on the freshly-created node.
 		}
 
 		if err := r.initSubscribers(); err != nil {
@@ -234,10 +245,22 @@ func (r *RosProvider) watchdogLoop() {
 		if err := r.initMowingPathSubscriber(); err != nil {
 			logrus.Error(xerrors.Errorf("failed to init mowing path subscriber: %w", err))
 		}
+		// Re-warm action publisher: after resetSubscribers wiped the cache,
+		// the first user click would otherwise race the subscriber handshake
+		// and drop the message.
+		if _, err := r.Publisher("/xbot/action", &std_msgs.String{}); err != nil {
+			logrus.Warnf("failed to re-warm /xbot/action publisher: %v", err)
+		}
 	}
 }
 
 func (p *RosProvider) resetSubscribers() {
+	// Cached publishers become invalid once their node is closed — Write on a
+	// dead publisher silently drops. Clear the map so the next Publisher()
+	// call creates a fresh registration against the new node.
+	p.mtx.Lock()
+	p.publishers = nil
+	p.mtx.Unlock()
 	if p.node != nil {
 		p.node.Close()
 	}

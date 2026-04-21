@@ -1,6 +1,13 @@
-import {Button, Select, Slider, Dropdown, MenuProps} from 'antd';
+import {useState} from 'react';
+import {Button, Select, Slider, Tooltip} from 'antd';
+import {
+    PauseOutlined, CaretRightOutlined, PoweroffOutlined,
+    BackwardOutlined, ForwardOutlined,
+} from '@ant-design/icons';
 import {useHighLevelStatus} from '../../hooks/useHighLevelStatus';
+import {useMowerLogicParams} from '../../hooks/useMowerLogicParams';
 import {useMowerAction} from '../../hooks/useMowerAction';
+import {useApi} from '../../hooks/useApi';
 import {
     ColorProfile, ColorProfileLabels, SensorType, SensorTypeLabels,
     TimeRange, TimeRangePresets, colorProfileGradient,
@@ -34,38 +41,26 @@ const SliderRow = ({label, value, min, max, step, onChange}: {
 
 const ActionsSection = () => {
     const {highLevelStatus} = useHighLevelStatus();
+    const params = useMowerLogicParams();
     const mowerAction = useMowerAction();
+    const api = useApi();
     const stateName = highLevelStatus.StateName;
     const isIdle = stateName === 'IDLE';
     const isEmergency = !!highLevelStatus.Emergency;
+    const manualPause = !!params.manual_pause_mowing;
+    const [skipN, setSkipN] = useState(10);
 
-    const moreItems: MenuProps['items'] = [
-        {key: 'area_recording', label: 'Area Recording'},
-        {key: 'mow_next', label: 'Mow Next Area'},
-        {key: isIdle ? 'continue' : 'pause', label: isIdle ? 'Continue' : 'Pause'},
-        {type: 'divider'},
-        {key: 'mow_forward', label: 'Blade Forward'},
-        {key: 'mow_backward', label: 'Blade Backward'},
-        {key: 'mow_off', label: 'Blade Off', danger: true},
-    ];
+    const sendAction = async (action: string) => {
+        const res = await api.openmower.actionCreate(action);
+        if (res.error) throw new Error(res.error.error);
+    };
 
-    const handleMore: MenuProps['onClick'] = async ({key}) => {
-        switch (key) {
-            case 'area_recording':
-                await mowerAction('high_level_control', {Command: 3})(); break;
-            case 'mow_next':
-                await mowerAction('high_level_control', {Command: 4})(); break;
-            case 'continue':
-                await mowerAction('mower_logic', {Config: {Bools: [{Name: 'manual_pause_mowing', Value: false}]}})();
-                await mowerAction('high_level_control', {Command: 1})(); break;
-            case 'pause':
-                await mowerAction('mower_logic', {Config: {Bools: [{Name: 'manual_pause_mowing', Value: true}]}})(); break;
-            case 'mow_forward':
-                await mowerAction('mow_enabled', {MowEnabled: 1, MowDirection: 0})(); break;
-            case 'mow_backward':
-                await mowerAction('mow_enabled', {MowEnabled: 1, MowDirection: 1})(); break;
-            case 'mow_off':
-                await mowerAction('mow_enabled', {MowEnabled: 0, MowDirection: 0})(); break;
+    const pauseOrContinue = async () => {
+        if (manualPause) {
+            await mowerAction('mower_logic', {Config: {Bools: [{Name: 'manual_pause_mowing', Value: false}]}})();
+            await mowerAction('high_level_control', {Command: 1})();
+        } else {
+            await mowerAction('mower_logic', {Config: {Bools: [{Name: 'manual_pause_mowing', Value: true}]}})();
         }
     };
 
@@ -85,9 +80,39 @@ const ActionsSection = () => {
                 <Button block danger size="small"
                         onClick={mowerAction('emergency', {Emergency: 1})}>Emergency On</Button>
             )}
-            <Dropdown menu={{items: moreItems, onClick: handleMore}} trigger={['click']}>
-                <Button block size="small">More…</Button>
-            </Dropdown>
+            <Button block size="small"
+                    icon={manualPause ? <CaretRightOutlined/> : <PauseOutlined/>}
+                    onClick={pauseOrContinue}>
+                {manualPause ? 'Continue' : 'Pause'}
+            </Button>
+
+            <div className="flex items-center gap-2 mt-1">
+                <Slider className="flex-1" min={10} max={1000} step={10} value={skipN} onChange={setSkipN}/>
+                <span className="text-xs font-mono text-slate-400 w-10 text-right">{skipN}</span>
+            </div>
+            <Button block size="small" onClick={() => sendAction(`mower_logic:mowing/skip_points/${skipN}`)}>
+                Skip {skipN} Points
+            </Button>
+            <Button block size="small" onClick={() => sendAction('mower_logic:mowing/skip_path')}>
+                Skip Path
+            </Button>
+            <Button block size="small" onClick={() => sendAction('mower_logic:mowing/skip_area')}>
+                Skip Area
+            </Button>
+            <div className="flex gap-1">
+                <Tooltip title="Blade reverse">
+                    <Button className="flex-1" size="small" icon={<BackwardOutlined/>}
+                            onClick={mowerAction('mow_enabled', {MowEnabled: 1, MowDirection: 1})}/>
+                </Tooltip>
+                <Tooltip title="Blade forward">
+                    <Button className="flex-1" size="small" icon={<ForwardOutlined/>}
+                            onClick={mowerAction('mow_enabled', {MowEnabled: 1, MowDirection: 0})}/>
+                </Tooltip>
+                <Tooltip title="Blade off">
+                    <Button className="flex-1" danger size="small" icon={<PoweroffOutlined/>}
+                            onClick={mowerAction('mow_enabled', {MowEnabled: 0, MowDirection: 0})}/>
+                </Tooltip>
+            </div>
         </Section>
     );
 };

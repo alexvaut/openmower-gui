@@ -437,6 +437,24 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
           }),
 
       /**
+       * @description publish an action string to /xbot/action
+       *
+       * @tags openmower
+       * @name ActionCreate
+       * @summary publish an action
+       * @request POST:/openmower/action
+       */
+      actionCreate: (action: string, params: RequestParams = {}) =>
+          this.request<ApiOkResponse, ApiErrorResponse>({
+              path: `/openmower/action`,
+              method: "POST",
+              body: {action},
+              type: ContentType.Json,
+              format: "json",
+              ...params,
+          }),
+
+      /**
        * @description clear the map
        *
        * @tags openmower
