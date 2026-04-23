@@ -473,8 +473,25 @@ func (s *SensorLogProvider) QuerySamples(from, to int64, sensor string, limit in
 		limit = 50000
 	}
 
-	query := "SELECT timestamp, x, y, " + col + " FROM sensor_samples WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp ASC LIMIT ?"
-	rows, err := s.db.Query(query, from, to, limit)
+	// Count first so we can stride-sample evenly across the window. A plain
+	// ORDER BY timestamp ASC LIMIT N would clip the newest samples off wide
+	// windows (e.g. "last 7 days" with >50k rows would drop the most recent
+	// hour), since the LIMIT fills at the oldest end first.
+	var total int64
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM sensor_samples WHERE timestamp BETWEEN ? AND ?", from, to).Scan(&total); err != nil {
+		return nil, err
+	}
+	stride := int64(1)
+	if total > int64(limit) {
+		stride = (total + int64(limit) - 1) / int64(limit)
+	}
+
+	query := "SELECT timestamp, x, y, v FROM (" +
+		"SELECT timestamp, x, y, " + col + " AS v, " +
+		"(ROW_NUMBER() OVER (ORDER BY timestamp) - 1) AS rn " +
+		"FROM sensor_samples WHERE timestamp BETWEEN ? AND ?" +
+		") WHERE rn % ? = 0 ORDER BY timestamp ASC"
+	rows, err := s.db.Query(query, from, to, stride)
 	if err != nil {
 		return nil, err
 	}

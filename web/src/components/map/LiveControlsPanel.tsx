@@ -170,18 +170,54 @@ const SensorSection = () => {
                 <SliderRow label="Blur" value={sensorLog.pointBlur} min={0} max={2} step={0.1} onChange={sensorLog.setPointBlur}/>
                 <SliderRow label="Opacity" value={sensorLog.opacity} min={0.1} max={1} step={0.1} onChange={sensorLog.setOpacity}/>
             </div>
-            {sensorLog.visible && sensorLog.data && sensorLog.data.count > 0 && (
-                <div className="mt-2 pt-2 border-t border-slate-800">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                        {SensorTypeLabels[sensorLog.sensorType]} · {sensorLog.data.count} pts
+            {sensorLog.visible && sensorLog.data && sensorLog.data.count > 0 && (() => {
+                const {min: dataMin, max: dataMax} = sensorLog.data!;
+                const {min: vfMin, max: vfMax} = sensorLog.valueFilter;
+                const loVal = vfMin ?? dataMin;
+                const hiVal = vfMax ?? dataMax;
+                const filterActive = vfMin !== null || vfMax !== null;
+                const span = dataMax - dataMin;
+                // Step: ~1% of data range, with a sensible minimum. Degenerate
+                // (all-same-value) ranges get a 1-unit step so the slider still moves.
+                const step = span > 0 ? Math.max(span / 100, 0.01) : 1;
+                return (
+                    <div className="mt-2 pt-2 border-t border-slate-800">
+                        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+                            <span>{SensorTypeLabels[sensorLog.sensorType]} · {sensorLog.data!.count} pts</span>
+                            {filterActive && (
+                                <button
+                                    className="text-[10px] text-slate-400 hover:text-slate-200 underline"
+                                    onClick={() => sensorLog.clearValueFilter()}
+                                >
+                                    Reset
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-mono">
+                            <span className="text-slate-400 w-12 text-right">{loVal.toFixed(1)}</span>
+                            <div className="flex-1 h-2.5 rounded" style={{background: colorProfileGradient(sensorLog.colorProfile)}}/>
+                            <span className="text-slate-400 w-12">{hiVal.toFixed(1)}</span>
+                        </div>
+                        {dataMax > dataMin && (
+                            <Slider
+                                range
+                                min={dataMin}
+                                max={dataMax}
+                                step={step}
+                                value={[loVal, hiVal]}
+                                onChange={(v) => {
+                                    const [lo, hi] = v as [number, number];
+                                    sensorLog.setValueFilter(
+                                        lo <= dataMin ? null : lo,
+                                        hi >= dataMax ? null : hi,
+                                    );
+                                }}
+                                tooltip={{formatter: (v) => (v ?? 0).toFixed(1)}}
+                            />
+                        )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-mono">
-                        <span className="text-slate-400">{sensorLog.data.min.toFixed(1)}</span>
-                        <div className="flex-1 h-2.5 rounded" style={{background: colorProfileGradient(sensorLog.colorProfile)}}/>
-                        <span className="text-slate-400">{sensorLog.data.max.toFixed(1)}</span>
-                    </div>
-                </div>
-            )}
+                );
+            })()}
         </Section>
     );
 };

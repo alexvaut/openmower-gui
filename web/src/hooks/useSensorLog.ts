@@ -34,6 +34,16 @@ export const useSensorLog = () => {
     const rawProfile = searchParams.get('profile');
     const colorProfile: ColorProfile = VALID_PROFILES.includes(rawProfile as ColorProfile)
         ? (rawProfile as ColorProfile) : 'thermal';
+    // Value-range filter (null = unbounded on that side). Different sensors
+    // have incompatible scales, so setSensorType clears these.
+    const vminParam = searchParams.get('vmin');
+    const vmaxParam = searchParams.get('vmax');
+    const vminNum = vminParam !== null ? Number(vminParam) : NaN;
+    const vmaxNum = vmaxParam !== null ? Number(vmaxParam) : NaN;
+    const valueFilter = {
+        min: Number.isFinite(vminNum) ? vminNum : null,
+        max: Number.isFinite(vmaxNum) ? vmaxNum : null,
+    };
 
     // Mutations: patch search params. Uses push semantics so each change is a
     // new browser history entry — back button walks them.
@@ -49,7 +59,20 @@ export const useSensorLog = () => {
     }, [setSearchParams]);
 
     const setSensorType = useCallback((s: SensorType) => {
-        patch({sensor: s});
+        // Clear value filter — numeric bounds don't transfer between sensors
+        // (e.g. rpm is 0–3000, v_battery is ~24–30).
+        patch({sensor: s, vmin: null, vmax: null});
+    }, [patch]);
+
+    const setValueFilter = useCallback((min: number | null, max: number | null) => {
+        patch({
+            vmin: min === null ? null : String(min),
+            vmax: max === null ? null : String(max),
+        });
+    }, [patch]);
+
+    const clearValueFilter = useCallback(() => {
+        patch({vmin: null, vmax: null});
     }, [patch]);
 
     const setTimeRange = useCallback((r: TimeRange) => {
@@ -135,5 +158,6 @@ export const useSensorLog = () => {
         refresh, refreshTick,
         seedData,
         hoveredTime, setHoveredTime,
+        valueFilter, setValueFilter, clearValueFilter,
     };
 };

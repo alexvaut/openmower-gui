@@ -727,28 +727,32 @@ export const MapPage = () => {
         return [map_ne, map_sw, datum]
     }, [_datumLat, _datumLon, map, offsetX, offsetY])
 
-    // Build GeoJSON from sensor log data for map overlay
+    // Build GeoJSON from sensor log data for map overlay. Applies the value
+    // filter (hide samples outside [effMin, effMax]) and stretches the color
+    // gradient across that same window so contrast tracks the slider.
     const sensorGeoJSON = useMemo<FeatureCollection>(() => {
         if (!sensorLog.data?.samples?.length || !sensorLog.visible) {
             return {type: 'FeatureCollection', features: []};
         }
         const {min, max} = sensorLog.data;
-        const range = max - min || 1;
-        return {
-            type: 'FeatureCollection',
-            features: sensorLog.data.samples.map(s => {
-                const [lon, lat] = transpose(offsetX, offsetY, datum, s.y, s.x);
-                return {
-                    type: 'Feature' as const,
-                    geometry: {type: 'Point' as const, coordinates: [lon, lat]},
-                    properties: {
-                        value: s.v,
-                        normalized: (s.v - min) / range,
-                    },
-                };
-            }),
-        };
-    }, [sensorLog.data, sensorLog.visible, offsetX, offsetY, datum]);
+        const effMin = sensorLog.valueFilter.min ?? min;
+        const effMax = sensorLog.valueFilter.max ?? max;
+        const range = effMax - effMin || 1;
+        const features: FeatureCollection['features'] = [];
+        for (const s of sensorLog.data.samples) {
+            if (s.v < effMin || s.v > effMax) continue;
+            const [lon, lat] = transpose(offsetX, offsetY, datum, s.y, s.x);
+            features.push({
+                type: 'Feature' as const,
+                geometry: {type: 'Point' as const, coordinates: [lon, lat]},
+                properties: {
+                    value: s.v,
+                    normalized: (s.v - effMin) / range,
+                },
+            });
+        }
+        return {type: 'FeatureCollection', features};
+    }, [sensorLog.data, sensorLog.visible, sensorLog.valueFilter.min, sensorLog.valueFilter.max, offsetX, offsetY, datum]);
 
     // Highlight the sample whose timestamp is closest to the graph's hovered
     // time. Samples from /api/sensorlog come back ordered by t, so a binary

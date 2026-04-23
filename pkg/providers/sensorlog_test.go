@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bluenviron/goroslib/v2"
 	"github.com/stretchr/testify/assert"
+	_ "modernc.org/sqlite"
 )
 
 // fakeRosProvider is an inline test double for types.IRosProvider.
@@ -220,6 +222,93 @@ func TestOnMowerStatus_PopulatesFields(t *testing.T) {
 	assert.Equal(t, int16(100), s.lastLeftRpm)
 	assert.Equal(t, int16(110), s.lastRightRpm)
 	assert.InDelta(t, 28.4, float64(s.lastVBattery), eps)
+}
+
+// newProviderWithDB opens an in-memory SQLite DB and returns a provider ready
+// for QuerySamples. Each call uses a fresh shared-memory URI so tests don't
+// collide with each other.
+func newProviderWithDB(t *testing.T) *SensorLogProvider {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:sensorlog_test_"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(createTableSQL); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	return &SensorLogProvider{db: db, stopCh: make(chan struct{})}
+}
+
+// TestQuerySamples_StrideSpansWindow: when the raw row count exceeds limit,
+// the stride sampler should return samples whose timestamps span the full
+// [from, to] window (the old ASC-LIMIT approach would truncate at the newest
+// end and drop recent data).
+func TestQuerySamples_StrideSpansWindow(t *testing.T) {
+	s := newProviderWithDB(t)
+
+	// Insert 5000 samples at 1-second intervals.
+	const n = 5000
+	const from = int64(1_000_000)
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	stmt, err := tx.Prepare("INSERT INTO sensor_samples (timestamp, x, y, mow_rpm, mow_current, mow_temp_motor, mow_temp_pcb) VALUES (?, ?, ?, ?, 0, 0, 0)")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := stmt.Exec(from+int64(i), float64(i), 0.0, i); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	stmt.Close()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	// Use a tight limit so stride kicks in (stride = 10).
+	to := from + int64(n-1)
+	result, err := s.QuerySamples(from, to, "mow_rpm", 500)
+	if err != nil {
+		t.Fatalf("QuerySamples: %v", err)
+	}
+
+	assert.NotEmpty(t, result.Samples, "expected sampled results")
+	assert.LessOrEqual(t, result.Count, 500, "stride should keep count within limit")
+	// The first returned sample must be near `from` and the last near `to`.
+	// A broken (ASC-LIMIT) implementation would put both near `from`.
+	first := result.Samples[0].T
+	last := result.Samples[len(result.Samples)-1].T
+	assert.Equal(t, from, first, "first sample should be at window start")
+	// Last must be within one stride of `to` (stride=10 → within 10s).
+	assert.GreaterOrEqual(t, last, to-10, "last sample should reach near window end; got %d, want >= %d", last, to-10)
+}
+
+// TestQuerySamples_NoStrideWhenUnderLimit: under-limit windows behave like
+// before — every sample in range is returned, in ascending timestamp order.
+func TestQuerySamples_NoStrideWhenUnderLimit(t *testing.T) {
+	s := newProviderWithDB(t)
+
+	const from = int64(2_000_000)
+	const n = 50
+	for i := 0; i < n; i++ {
+		if _, err := s.db.Exec(
+			"INSERT INTO sensor_samples (timestamp, x, y, mow_rpm, mow_current, mow_temp_motor, mow_temp_pcb) VALUES (?, 0, 0, ?, 0, 0, 0)",
+			from+int64(i), i,
+		); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	result, err := s.QuerySamples(from, from+int64(n-1), "mow_rpm", 1000)
+	if err != nil {
+		t.Fatalf("QuerySamples: %v", err)
+	}
+	assert.Equal(t, n, result.Count)
+	assert.Equal(t, from, result.Samples[0].T)
+	assert.Equal(t, from+int64(n-1), result.Samples[len(result.Samples)-1].T)
 }
 
 func TestOnHighLevelState_PopulatesStateName(t *testing.T) {
