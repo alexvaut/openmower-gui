@@ -150,26 +150,28 @@ func NewRosProvider(dbProvider types2.IDBProvider) types2.IRosProvider {
 	r := &RosProvider{
 		dbProvider: dbProvider,
 	}
-	err := r.initSubscribers()
-	if err != nil {
-		logrus.Error(err)
-		return r
+	// Start the watchdog FIRST and unconditionally. Initial setup may fail
+	// when rosmaster isn't reachable yet at boot (network race) — without
+	// the watchdog, recovery would never happen for the lifetime of the
+	// process. The watchdog itself calls getNode + initSubscribers on every
+	// tick, so it self-heals from a dead-on-arrival state too.
+	go r.watchdogLoop()
+
+	if err := r.initSubscribers(); err != nil {
+		logrus.Warnf("initial subscriber setup failed (watchdog will retry): %v", err)
 	}
-	err = r.initMowingPathSubscriber()
-	if err != nil {
-		logrus.Error(err)
-		return r
+	if err := r.initMowingPathSubscriber(); err != nil {
+		logrus.Warnf("initial mowing path subscriber setup failed (watchdog will retry): %v", err)
 	}
 	// Pre-warm the action publisher so the first user action (Skip Points,
 	// Skip Path, Skip Area) isn't lost to the goroslib subscriber-handshake
 	// race. Without this, the first Write after NewPublisher fires before
 	// mower_logic has completed its TCP connect, and the message is dropped.
-	if _, err = r.Publisher("/xbot/action", &std_msgs.String{}); err != nil {
+	if _, err := r.Publisher("/xbot/action", &std_msgs.String{}); err != nil {
 		logrus.Warnf("failed to pre-warm /xbot/action publisher: %v", err)
 	} else {
 		logrus.Info("Pre-warmed /xbot/action publisher")
 	}
-	go r.watchdogLoop()
 	return r
 }
 
