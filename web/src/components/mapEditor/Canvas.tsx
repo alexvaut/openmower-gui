@@ -2,12 +2,14 @@ import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {useShallow} from 'zustand/react/shallow';
 import {DrawingLayer} from './CanvasLayers/DrawingLayer';
 import {OverlayLayer} from './CanvasLayers/OverlayLayer';
+import {PathLayer} from './CanvasLayers/PathLayer';
 import {StaticLayer} from './CanvasLayers/StaticLayer';
 import {s2w, snapPoint, w2s} from './coords';
 import {findNearestEdge, pointInPolygon, polygonArea} from './geometry';
 import {DOCK_HANDLE_DISTANCE_M, EDGE_SNAP_PX, HANDLE_HIT_PX} from './style';
 import type {Point} from './types';
 import {useMapEditorStore} from './useMapEditorStore';
+import {useMowerPaths} from './useMowerPaths';
 
 function eventPos(e: React.PointerEvent<SVGSVGElement> | PointerEvent, svg: SVGSVGElement): Point {
     const rect = svg.getBoundingClientRect();
@@ -21,7 +23,7 @@ export function Canvas() {
     const pointerIdRef = useRef<number | null>(null);
 
     const {
-        mode, drawing, view, snap, selection, spaceHeld, map, drag,
+        mode, drawing, view, snap, selection, spaceHeld, map, drag, showPaths,
         setHover, setDrag, select, beginMutation,
         updateDragPoint, updateDockPos, updateDockHeading,
         zoomBy, fit, setMode, cancelDraw,
@@ -30,6 +32,7 @@ export function Canvas() {
     } = useMapEditorStore(useShallow(s => ({
         mode: s.mode, drawing: s.drawing, view: s.view, snap: s.snap,
         selection: s.selection, spaceHeld: s.spaceHeld, map: s.map, drag: s.drag,
+        showPaths: s.showPaths,
         setHover: s.setHover, setDrag: s.setDrag, select: s.select,
         beginMutation: s.beginMutation,
         updateDragPoint: s.updateDragPoint, updateDockPos: s.updateDockPos, updateDockHeading: s.updateDockHeading,
@@ -37,6 +40,8 @@ export function Canvas() {
         addDrawingPoint: s.addDrawingPoint, finishDrawArea: s.finishDrawArea, placeDock: s.placeDock,
         insertPointOnEdge: s.insertPointOnEdge, setSpaceHeld: s.setSpaceHeld,
     })));
+
+    const {polylines} = useMowerPaths(showPaths);
 
     useLayoutEffect(() => {
         const el = containerRef.current;
@@ -313,6 +318,7 @@ export function Canvas() {
                 onContextMenu={onContextMenu}
             >
                 <StaticLayer width={size.width} height={size.height}/>
+                {showPaths && <PathLayer width={size.width} height={size.height} polylines={polylines}/>}
                 <OverlayLayer width={size.width} height={size.height}/>
                 <DrawingLayer width={size.width} height={size.height}/>
             </svg>

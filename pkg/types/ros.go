@@ -10,4 +10,5 @@ type IRosProvider interface {
 	Subscribe(topic string, id string, cb func(msg []byte)) error
 	UnSubscribe(topic string, id string)
 	Publisher(topic string, obj interface{}) (*goroslib.Publisher, error)
+	GetLastMessage(topic string) ([]byte, bool)
 }

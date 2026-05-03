@@ -504,6 +504,16 @@ func (p *RosProvider) Publisher(topic string, obj interface{}) (*goroslib.Publis
 	return publisher, nil
 }
 
+func (p *RosProvider) GetLastMessage(topic string) ([]byte, bool) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	msg, ok := p.lastMessage[topic]
+	if !ok {
+		return nil, false
+	}
+	return msg, true
+}
+
 func (p *RosProvider) UnSubscribe(topic string, id string) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
@@ -1002,6 +1012,7 @@ func (p *RosProvider) jsonMapHandler(msg *std_msgs.String) {
 
 	// Publish as the topic the GUI expects
 	const topic = "/xbot_monitoring/map"
+	const rawTopic = "/mower_map_service/json_map"
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	msgJson, err := json.Marshal(result)
@@ -1010,11 +1021,21 @@ func (p *RosProvider) jsonMapHandler(msg *std_msgs.String) {
 		return
 	}
 	p.lastMessage[topic] = msgJson
-	p.lastMessageAt["/mower_map_service/json_map"] = time.Now()
+	p.lastMessageAt[rawTopic] = time.Now()
 	subscribers, hasSubscriber := p.subscribers[topic]
 	if hasSubscriber {
 		for _, cb := range subscribers {
 			cb.Publish(msgJson)
+		}
+	}
+
+	// Also cache the raw canonical JSON so the editor can read it back
+	// verbatim via GET /openmower/map/json (lossless round-trip).
+	rawData := []byte(msg.Data)
+	p.lastMessage[rawTopic] = rawData
+	if rawSubs, ok := p.subscribers[rawTopic]; ok {
+		for _, cb := range rawSubs {
+			cb.Publish(rawData)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -32,6 +33,8 @@ func OpenMowerRoutes(r *gin.RouterGroup, provider types.IRosProvider) {
 	SetDockingPointRoute(group, provider)
 	ClearMapRoute(group, provider)
 	ReplaceMapRoute(group, provider)
+	GetMapJsonRoute(group, provider)
+	SetMapJsonRoute(group, provider)
 	SubscriberRoute(group, provider)
 	OverridePublisherRoute(group, provider)
 	PublisherRoute(group, provider)
@@ -119,6 +122,62 @@ func ReplaceMapRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 
 			c.JSON(200, OkResponse{})
 		}
+	})
+}
+
+// GetMapJsonRoute returns the canonical map.json from the running mower.
+//
+// @Summary get the full map JSON
+// @Description return the latest /mower_map_service/json_map message verbatim
+// @Tags openmower
+// @Produce json
+// @Success 200 {string} string "raw map JSON"
+// @Failure 503 {object} ErrorResponse "no map cached yet"
+// @Router /openmower/map/json [get]
+func GetMapJsonRoute(group *gin.RouterGroup, provider types.IRosProvider) {
+	group.GET("/map/json", func(c *gin.Context) {
+		raw, ok := provider.GetLastMessage("/mower_map_service/json_map")
+		if !ok {
+			c.JSON(503, ErrorResponse{Error: "no map available from mower yet"})
+			return
+		}
+		c.Data(200, "application/json", raw)
+	})
+}
+
+// SetMapJsonRoute writes the full canonical map.json onto the mower.
+//
+// @Summary set the full map JSON
+// @Description replace the on-mower map atomically using the canonical JSON format
+// @Tags openmower
+// @Accept json
+// @Produce json
+// @Success 200 {object} OkResponse
+// @Failure 400 {object} ErrorResponse "invalid JSON or empty body"
+// @Failure 500 {object} ErrorResponse "service call failed"
+// @Router /openmower/map/json [put]
+func SetMapJsonRoute(group *gin.RouterGroup, provider types.IRosProvider) {
+	group.PUT("/map/json", func(c *gin.Context) {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(400, ErrorResponse{Error: "failed to read request body: " + err.Error()})
+			return
+		}
+		if len(body) == 0 {
+			c.JSON(400, ErrorResponse{Error: "empty request body"})
+			return
+		}
+		req := mower_map.SetJsonMapSrvReq{Json: string(body)}
+		res := mower_map.SetJsonMapSrvRes{}
+		if err := provider.CallService(c.Request.Context(), "/mower_map_service/set_json_map", &mower_map.SetJsonMapSrv{}, &req, &res); err != nil {
+			c.JSON(500, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if !res.Success {
+			c.JSON(400, ErrorResponse{Error: res.Message})
+			return
+		}
+		c.JSON(200, OkResponse{})
 	})
 }
 
@@ -360,7 +419,7 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 			if err != nil {
 				return
 			}
-			err = provider.CallService(c.Request.Context(), "/mower_service/emergency", &mower_msgs.EmergencyStopSrv{}, &CallReq, &mower_msgs.EmergencyStopSrvRes{})
+			err = provider.CallService(c.Request.Context(), "/ll/_service/emergency", &mower_msgs.EmergencyStopSrv{}, &CallReq, &mower_msgs.EmergencyStopSrvRes{})
 		case "mower_logic":
 			var CallReq dynamic_reconfigure.ReconfigureReq
 			err = c.BindJSON(&CallReq)
@@ -382,13 +441,6 @@ func ServiceRoute(group *gin.RouterGroup, provider types.IRosProvider) {
 				return
 			}
 			err = provider.CallService(c.Request.Context(), "/ll/_service/mow_enabled", &mower_msgs.MowerControlSrv{}, &CallReq, &mower_msgs.MowerControlSrvRes{})
-		case "start_in_area":
-			var CallReq mower_msgs.StartInAreaSrvReq
-			err = c.BindJSON(&CallReq)
-			if err != nil {
-				return
-			}
-			err = provider.CallService(c.Request.Context(), "/mower_service/start_in_area", &mower_msgs.StartInAreaSrv{}, &CallReq, &mower_msgs.StartInAreaSrvRes{})
 		default:
 			err = errors.New("unknown command")
 		}

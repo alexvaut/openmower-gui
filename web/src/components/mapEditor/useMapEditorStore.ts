@@ -25,6 +25,7 @@ export interface MapEditorState {
     lastPoint: {areaId: string; pointIdx: number} | null;
     history: {past: MapDoc[]; future: MapDoc[]};
     dirty: boolean;
+    showPaths: boolean;
 
     loadParsed(parsed: ParsedMap, filename: string): void;
     getSerialized(): ReturnType<typeof serializeMap> | null;
@@ -71,6 +72,7 @@ export interface MapEditorState {
     cancelDraw(): void;
 
     setSnap(snap: Snap): void;
+    setShowPaths(show: boolean): void;
     setHover(hover: Partial<{edge: EdgeHover | null; cursor: Point | null}>): void;
     setSpaceHeld(held: boolean): void;
     setLastPoint(p: {areaId: string; pointIdx: number} | null): void;
@@ -105,6 +107,7 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
     lastPoint: null,
     history: {past: [], future: []},
     dirty: false,
+    showPaths: false,
 
     loadParsed: (parsed, filename) => set({
         map: parsed.map,
@@ -327,6 +330,7 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
     cancelDraw: () => set({mode: 'edit', drawing: null}),
 
     setSnap: (snap) => set({snap}),
+    setShowPaths: (show) => set({showPaths: show}),
     setHover: (partial) => set(s => ({hover: {...s.hover, ...partial}})),
     setSpaceHeld: (held) => set({spaceHeld: held}),
     setLastPoint: (p) => set({lastPoint: p}),
