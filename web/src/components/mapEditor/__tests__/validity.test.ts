@@ -3,7 +3,7 @@ import type {Area} from '../types';
 import {buildOriginalOutlineMap, validateArea, validateMap} from '../validity';
 
 function area(id: string, outline: Array<[number, number]>): Area {
-    return {id, properties: {type: 'mow'}, outline: outline.map(([x, y]) => ({x, y}))};
+    return {id, properties: {type: 'mow', active: true}, outline: outline.map(([x, y]) => ({x, y}))};
 }
 
 describe('validateArea', () => {

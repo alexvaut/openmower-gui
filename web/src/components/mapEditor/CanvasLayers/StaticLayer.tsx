@@ -67,6 +67,7 @@ function Polygons({
                 const d = polygonToPath(a.outline, view, width, height);
                 const style = AREA_STYLE[a.properties.type];
                 const selected = a.id === selectedId;
+                const inactive = !a.properties.active;
                 return (
                     <path
                         key={a.id}
@@ -75,6 +76,8 @@ function Polygons({
                         fill={selected ? style.fillSel : style.fill}
                         stroke={style.stroke}
                         strokeWidth={selected ? 2 : 1.4}
+                        strokeDasharray={inactive ? '4 3' : undefined}
+                        opacity={inactive ? 0.35 : 1}
                     />
                 );
             })}
@@ -105,9 +108,11 @@ function Docks({
                 };
                 const hs = w2s(handleWorld, view, width, height);
                 const selected = d.id === selectedId;
+                const inactive = !d.properties.active;
                 return (
-                    <g key={d.id} data-dock-id={d.id}>
-                        <line x1={s.x} y1={s.y} x2={hs.x} y2={hs.y} stroke={DOCK_COLOR} strokeWidth={2}/>
+                    <g key={d.id} data-dock-id={d.id} opacity={inactive ? 0.35 : 1}>
+                        <line x1={s.x} y1={s.y} x2={hs.x} y2={hs.y} stroke={DOCK_COLOR} strokeWidth={2}
+                              strokeDasharray={inactive ? '4 3' : undefined}/>
                         <circle
                             cx={s.x}
                             cy={s.y}
@@ -116,6 +121,7 @@ function Docks({
                             fillOpacity={0.35}
                             stroke={DOCK_COLOR}
                             strokeWidth={selected ? 2.5 : 1.5}
+                            strokeDasharray={inactive ? '4 3' : undefined}
                         />
                     </g>
                 );

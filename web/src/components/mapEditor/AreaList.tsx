@@ -1,5 +1,6 @@
 import {useMemo, useState} from 'react';
-import {Button, Input} from 'antd';
+import {Button, Input, Tooltip} from 'antd';
+import {EyeInvisibleOutlined, EyeOutlined} from '@ant-design/icons';
 import {useShallow} from 'zustand/react/shallow';
 import {AREA_STYLE, DOCK_COLOR} from './style';
 import type {AreaType} from './types';
@@ -14,7 +15,7 @@ const TYPE_LABEL: Record<AreaType, string> = {
 export function AreaList() {
     const {
         areas, docks, selection, loaded,
-        select, startDrawArea, startDrawDock,
+        select, startDrawArea, startDrawDock, setAreaActive, setDockActive,
     } = useMapEditorStore(useShallow(s => ({
         areas: s.map.areas,
         docks: s.map.docking_stations,
@@ -23,6 +24,8 @@ export function AreaList() {
         select: s.select,
         startDrawArea: s.startDrawArea,
         startDrawDock: s.startDrawDock,
+        setAreaActive: s.setAreaActive,
+        setDockActive: s.setDockActive,
     })));
     const [filter, setFilter] = useState('');
 
@@ -79,19 +82,32 @@ export function AreaList() {
             <div className="flex-1 overflow-y-auto">
                 {filtered.map(a => {
                     const isSel = selection?.kind === 'area' && selection.id === a.id;
+                    const inactive = !a.properties.active;
                     return (
                         <div
                             key={a.id}
                             onClick={() => select({kind: 'area', id: a.id})}
-                            className={`px-2 py-1.5 border-b border-slate-800 cursor-pointer text-xs hover:bg-slate-800 ${isSel ? 'bg-slate-800' : ''}`}
+                            className={`px-2 py-1.5 border-b border-slate-800 cursor-pointer text-xs hover:bg-slate-800 ${isSel ? 'bg-slate-800' : ''} ${inactive ? 'opacity-50' : ''}`}
                         >
                             <div className="flex items-center gap-2">
                                 <span
                                     className="inline-block w-2 h-2 rounded-full"
                                     style={{background: AREA_STYLE[a.properties.type].stroke}}
                                 />
-                                <span className="font-medium">{TYPE_LABEL[a.properties.type]}</span>
-                                <span className="text-slate-500 font-mono ml-auto">{a.id.slice(0, 6)}…</span>
+                                <span className={`font-medium ${inactive ? 'line-through' : ''}`}>{TYPE_LABEL[a.properties.type]}</span>
+                                <Tooltip title={inactive ? 'Excluded from map — click to include' : 'Included in map — click to exclude'}>
+                                    <Button
+                                        size="small"
+                                        type="text"
+                                        className="ml-auto"
+                                        icon={inactive ? <EyeInvisibleOutlined/> : <EyeOutlined/>}
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            setAreaActive(a.id, inactive);
+                                        }}
+                                    />
+                                </Tooltip>
+                                <span className="text-slate-500 font-mono">{a.id.slice(0, 6)}…</span>
                             </div>
                             <div className="mt-0.5 text-[11px] text-slate-400 pl-4">{a.outline.length} pts</div>
                         </div>
@@ -99,16 +115,29 @@ export function AreaList() {
                 })}
                 {docks.map(d => {
                     const isSel = selection?.kind === 'dock' && selection.id === d.id;
+                    const inactive = !d.properties.active;
                     return (
                         <div
                             key={d.id}
                             onClick={() => select({kind: 'dock', id: d.id})}
-                            className={`px-2 py-1.5 border-b border-slate-800 cursor-pointer text-xs hover:bg-slate-800 ${isSel ? 'bg-slate-800' : ''}`}
+                            className={`px-2 py-1.5 border-b border-slate-800 cursor-pointer text-xs hover:bg-slate-800 ${isSel ? 'bg-slate-800' : ''} ${inactive ? 'opacity-50' : ''}`}
                         >
                             <div className="flex items-center gap-2">
                                 <span className="inline-block w-2 h-2 rounded-full" style={{background: DOCK_COLOR}}/>
-                                <span className="font-medium">Dock</span>
-                                <span className="text-slate-500 font-mono ml-auto">{d.id.slice(0, 6)}…</span>
+                                <span className={`font-medium ${inactive ? 'line-through' : ''}`}>Dock</span>
+                                <Tooltip title={inactive ? 'Excluded from map — click to include' : 'Included in map — click to exclude'}>
+                                    <Button
+                                        size="small"
+                                        type="text"
+                                        className="ml-auto"
+                                        icon={inactive ? <EyeInvisibleOutlined/> : <EyeOutlined/>}
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            setDockActive(d.id, inactive);
+                                        }}
+                                    />
+                                </Tooltip>
+                                <span className="text-slate-500 font-mono">{d.id.slice(0, 6)}…</span>
                             </div>
                             <div className="mt-0.5 text-[11px] text-slate-400 pl-4">{d.properties.name || '—'}</div>
                         </div>

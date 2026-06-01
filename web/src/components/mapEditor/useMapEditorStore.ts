@@ -47,6 +47,7 @@ export interface MapEditorState {
 
     addArea(type: AreaType, outline: Point[]): string;
     setAreaType(id: string, type: AreaType): void;
+    setAreaActive(id: string, active: boolean): void;
     deletePoint(areaId: string, pointIdx: number): void;
     insertPointOnEdge(areaId: string, edgeIdx: number, pos: Point): number;
     reverseWinding(id: string): void;
@@ -56,6 +57,7 @@ export interface MapEditorState {
 
     placeDock(pos: Point, heading?: number): string;
     setDockName(id: string, name: string): void;
+    setDockActive(id: string, active: boolean): void;
     setDockPosition(id: string, pos: Point): void;
     setDockHeading(id: string, heading: number): void;
     deleteDock(id: string): void;
@@ -208,13 +210,17 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
     addArea: (type, outline) => {
         const id = generateId();
         get().commit(m => {
-            m.areas.push({id, properties: {type}, outline: outline.map(p => ({x: p.x, y: p.y}))});
+            m.areas.push({id, properties: {type, active: true}, outline: outline.map(p => ({x: p.x, y: p.y}))});
         });
         return id;
     },
     setAreaType: (id, type) => get().commit(m => {
         const a = m.areas.find(x => x.id === id);
         if (a) a.properties.type = type;
+    }),
+    setAreaActive: (id, active) => get().commit(m => {
+        const a = m.areas.find(x => x.id === id);
+        if (a) a.properties.active = active;
     }),
     deletePoint: (areaId, pointIdx) => get().commit(m => {
         const a = m.areas.find(x => x.id === areaId);
@@ -249,7 +255,7 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
             if (!a) return;
             m.areas.push({
                 id: newId,
-                properties: {type: a.properties.type},
+                properties: {type: a.properties.type, active: a.properties.active},
                 outline: a.outline.map(p => ({x: p.x + 1, y: p.y + 1})),
             });
         });
@@ -268,7 +274,7 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
         get().commit(m => {
             m.docking_stations.push({
                 id,
-                properties: {name: `Dock ${m.docking_stations.length + 1}`},
+                properties: {name: `Dock ${m.docking_stations.length + 1}`, active: true},
                 position: {x: pos.x, y: pos.y},
                 heading,
             });
@@ -278,6 +284,10 @@ export const useMapEditorStore = create<MapEditorState>((set, get) => ({
     setDockName: (id, name) => get().commit(m => {
         const d = m.docking_stations.find(x => x.id === id);
         if (d) d.properties.name = name;
+    }),
+    setDockActive: (id, active) => get().commit(m => {
+        const d = m.docking_stations.find(x => x.id === id);
+        if (d) d.properties.active = active;
     }),
     setDockPosition: (id, pos) => get().commit(m => {
         const d = m.docking_stations.find(x => x.id === id);

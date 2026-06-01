@@ -4,13 +4,13 @@ export type AreaType = 'mow' | 'obstacle' | 'nav';
 
 export type Area = {
     id: string;
-    properties: {type: AreaType};
+    properties: {type: AreaType; active: boolean};
     outline: Point[];
 };
 
 export type Dock = {
     id: string;
-    properties: {name: string};
+    properties: {name: string; active: boolean};
     position: Point;
     heading: number;
 };

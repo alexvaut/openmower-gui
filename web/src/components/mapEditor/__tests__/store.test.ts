@@ -6,7 +6,7 @@ import {useMapEditorStore} from '../useMapEditorStore';
 const TINY: MapDoc = {
     areas: [{
         id: 'a1',
-        properties: {type: 'mow'},
+        properties: {type: 'mow', active: true},
         outline: [{x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}],
     }],
     docking_stations: [],
@@ -98,7 +98,7 @@ describe('useMapEditorStore', () => {
             map: {
                 areas: [{
                     id: 'tri',
-                    properties: {type: 'mow'},
+                    properties: {type: 'mow', active: true},
                     outline: [{x: 0, y: 0}, {x: 1, y: 0}, {x: 0, y: 1}],
                 }],
                 docking_stations: [],

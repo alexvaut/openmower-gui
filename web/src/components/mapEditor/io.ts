@@ -19,17 +19,19 @@ export function parseMapJson(text: string): ParsedMap {
 
 function toArea(a: RawArea): Area {
     const t = a.properties?.type as Area['properties']['type'];
+    const active = (a.properties as {active?: unknown})?.active;
     return {
         id: a.id,
-        properties: {type: t},
+        properties: {type: t, active: active === false ? false : true},
         outline: a.outline.map(p => ({x: p.x, y: p.y})),
     };
 }
 
 function toDock(d: RawDock): Dock {
+    const active = (d.properties as {active?: unknown})?.active;
     return {
         id: d.id,
-        properties: {name: d.properties?.name ?? ''},
+        properties: {name: d.properties?.name ?? '', active: active === false ? false : true},
         position: {x: d.position.x, y: d.position.y},
         heading: d.heading,
     };
@@ -47,25 +49,33 @@ export function serializeMap(state: ParsedMap): RawMap {
 }
 
 function mergeArea(a: Area, original: RawArea | undefined): RawArea {
+    const {active: _origActive, ...origProps} = (original?.properties ?? {}) as Record<string, unknown>;
+    void _origActive;
+    const properties: Record<string, unknown> = {
+        ...origProps,
+        type: a.properties.type,
+    };
+    if (!a.properties.active) properties.active = false;
     return {
         ...(original ?? {}),
         id: a.id,
-        properties: {
-            ...(original?.properties ?? {}),
-            type: a.properties.type,
-        },
+        properties: properties as RawArea['properties'],
         outline: a.outline.map((p: Point) => ({x: p.x, y: p.y})),
     };
 }
 
 function mergeDock(d: Dock, original: RawDock | undefined): RawDock {
+    const {active: _origActive, ...origProps} = (original?.properties ?? {}) as Record<string, unknown>;
+    void _origActive;
+    const properties: Record<string, unknown> = {
+        ...origProps,
+        name: d.properties.name,
+    };
+    if (!d.properties.active) properties.active = false;
     return {
         ...(original ?? {}),
         id: d.id,
-        properties: {
-            ...(original?.properties ?? {}),
-            name: d.properties.name,
-        },
+        properties: properties as RawDock['properties'],
         position: {x: d.position.x, y: d.position.y},
         heading: d.heading,
     };

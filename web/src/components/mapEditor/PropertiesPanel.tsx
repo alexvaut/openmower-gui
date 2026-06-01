@@ -1,4 +1,4 @@
-import {Alert, Button, InputNumber, Popconfirm, Radio, Slider, Space} from 'antd';
+import {Alert, Button, InputNumber, Popconfirm, Radio, Slider, Space, Switch} from 'antd';
 import {useMemo} from 'react';
 import {useShallow} from 'zustand/react/shallow';
 import {fitToBounds} from './coords';
@@ -11,11 +11,12 @@ import {buildOriginalOutlineMap, validateArea, validateMap} from './validity';
 const SIMPLIFY_EPS = 0.05;
 
 function AreaPanel({areaId}: {areaId: string}) {
-    const {area, originalOutline, setAreaType, reverseWinding, simplifyArea, duplicateArea, deleteArea} = useMapEditorStore(
+    const {area, originalOutline, setAreaType, setAreaActive, reverseWinding, simplifyArea, duplicateArea, deleteArea} = useMapEditorStore(
         useShallow(s => ({
             area: s.map.areas.find(a => a.id === areaId),
             originalOutline: s.raw?.areas.find(a => a.id === areaId)?.outline as Point[] | undefined,
             setAreaType: s.setAreaType,
+            setAreaActive: s.setAreaActive,
             reverseWinding: s.reverseWinding,
             simplifyArea: s.simplifyArea,
             duplicateArea: s.duplicateArea,
@@ -55,6 +56,17 @@ function AreaPanel({areaId}: {areaId: string}) {
                     <Radio.Button value="obstacle">Obstacle</Radio.Button>
                     <Radio.Button value="nav">Nav</Radio.Button>
                 </Radio.Group>
+            </div>
+            <div className="flex items-center gap-2">
+                <Switch
+                    size="small"
+                    checked={area.properties.active}
+                    onChange={v => setAreaActive(area.id, v)}
+                />
+                <span className="text-xs text-slate-300">Active</span>
+                {!area.properties.active && (
+                    <span className="text-[11px] text-amber-400 ml-auto">excluded</span>
+                )}
             </div>
             {issue && (
                 <Alert
@@ -103,10 +115,11 @@ function AreaPanel({areaId}: {areaId: string}) {
 }
 
 function DockPanel({dockId}: {dockId: string}) {
-    const {dock, setDockName, setDockPosition, setDockHeading, deleteDock} = useMapEditorStore(
+    const {dock, setDockName, setDockActive, setDockPosition, setDockHeading, deleteDock} = useMapEditorStore(
         useShallow(s => ({
             dock: s.map.docking_stations.find(d => d.id === dockId),
             setDockName: s.setDockName,
+            setDockActive: s.setDockActive,
             setDockPosition: s.setDockPosition,
             setDockHeading: s.setDockHeading,
             deleteDock: s.deleteDock,
@@ -127,6 +140,17 @@ function DockPanel({dockId}: {dockId: string}) {
                     value={dock.properties.name}
                     onChange={e => setDockName(dock.id, e.target.value)}
                 />
+            </div>
+            <div className="flex items-center gap-2">
+                <Switch
+                    size="small"
+                    checked={dock.properties.active}
+                    onChange={v => setDockActive(dock.id, v)}
+                />
+                <span className="text-xs text-slate-300">Active</span>
+                {!dock.properties.active && (
+                    <span className="text-[11px] text-amber-400 ml-auto">excluded</span>
+                )}
             </div>
             <div>
                 <div className="text-xs uppercase text-slate-400 mb-1">Position</div>
